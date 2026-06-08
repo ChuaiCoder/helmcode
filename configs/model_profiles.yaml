@@ -1,0 +1,9 @@
+roles:
+  fast:
+    purpose: quick classification, summaries, and context compression
+  planning:
+    purpose: task decomposition, repo-aware planning, and verification strategy
+  coding:
+    purpose: unified diff patch generation
+  review:
+    purpose: patch review, safety review, and missing-test checks

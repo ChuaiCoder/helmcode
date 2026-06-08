@@ -1,0 +1,14 @@
+permission_mode: suggest
+providers:
+  - id: main_pool
+    type: openai_compatible
+    base_url: https://example.com/v1
+    api_key_env: MAIN_POOL_API_KEY
+model_roles:
+  default: main_pool:configure-a-default-model
+  fast: main_pool:configure-a-fast-model
+  planning: main_pool:configure-a-planning-model
+  coding: main_pool:configure-a-coding-model
+  review: main_pool:configure-a-review-model
+shell_timeout_seconds: 120
+max_read_chars: 20000

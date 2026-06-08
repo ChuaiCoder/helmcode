@@ -23,3 +23,10 @@ def test_command_policy_requires_confirmation_for_publish() -> None:
     assert result.allowed is False
     assert result.requires_confirmation is True
     assert "publish" in result.reason
+
+
+def test_command_policy_blocks_database_drop() -> None:
+    result = CommandPolicy().check("psql -c 'drop table users'", permission_mode="auto")
+
+    assert result.allowed is False
+    assert result.risk == CommandRisk.BLOCKED
