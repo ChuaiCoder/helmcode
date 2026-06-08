@@ -20,3 +20,7 @@ class PermissionMode(str, Enum):
     @property
     def can_apply_without_confirmation(self) -> bool:
         return self is self.AUTO
+
+    @property
+    def can_apply_after_confirmation(self) -> bool:
+        return self in {self.EDIT, self.AUTO}

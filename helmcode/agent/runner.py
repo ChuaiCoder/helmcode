@@ -8,8 +8,10 @@ from helmcode.agent.reviewer import Reviewer
 from helmcode.agent.state import AgentPlan, AgentState
 from helmcode.context.workspace import Workspace
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
+from helmcode.core.exceptions import PermissionDenied
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ProviderAdapter
+from helmcode.safety.permissions import PermissionMode
 
 
 @dataclass(slots=True)
@@ -64,6 +66,7 @@ class RunOrchestrator:
         self.coding_model_id = coding_model_id
         self.review_model_id = review_model_id
         self.permission_mode = permission_mode
+        self.mode = PermissionMode.normalize(permission_mode)
         self.external_executor = executor
         self.session_store = session_store
         self.max_repair_attempts = max_repair_attempts
@@ -113,6 +116,8 @@ class RunOrchestrator:
         return self.generate_patch_from_plan(self.plan(task))
 
     def generate_patch_from_plan(self, planned: PlannedRun) -> PreparedRun:
+        if not self.mode.can_generate_patch:
+            raise PermissionDenied(f"{self.permission_mode} mode blocks patch generation")
         state = AgentState.start(self.workspace.root_path, planned.task)
         state.session_id = planned.session_id
         agent = AgentLoop(
@@ -144,6 +149,8 @@ class RunOrchestrator:
         )
 
     def apply_prepared(self, prepared: PreparedRun, run_tests: bool = True) -> RunResult:
+        if not self.mode.can_apply_after_confirmation:
+            raise PermissionDenied(f"{self.permission_mode} mode blocks patch application")
         state = AgentState.start(self.workspace.root_path, "")
         state.session_id = prepared.session_id
         state.plan = AgentPlan(content=prepared.plan)

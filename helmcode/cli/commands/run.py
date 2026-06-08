@@ -14,6 +14,7 @@ from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING, MODE
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.model_registry import ModelRegistry
 from helmcode.models.selector import ModelSelector
+from helmcode.safety.permissions import PermissionMode
 
 console = Console()
 
@@ -62,6 +63,12 @@ def run_task(
     confirmed = yes or typer.confirm("Apply this patch?")
     if not confirmed:
         console.print("Patch stored for later. Inspect with `helmcode diff`, apply with `helmcode apply`.")
+        return
+    if not PermissionMode.normalize(config.permission_mode).can_apply_after_confirmation:
+        console.print(
+            f"Permission mode {config.permission_mode!r} stores patches only. "
+            "Inspect with `helmcode diff`, apply with `helmcode apply`."
+        )
         return
 
     apply_result = runner.apply_prepared(result, run_tests=not no_tests)

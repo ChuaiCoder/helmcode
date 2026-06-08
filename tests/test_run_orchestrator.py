@@ -2,6 +2,7 @@ from pathlib import Path
 
 from helmcode.agent.runner import RunOrchestrator
 from helmcode.context.workspace import Workspace
+from helmcode.core.exceptions import PermissionDenied
 from helmcode.models.provider import ChatMessage, ModelResponse
 
 
@@ -113,6 +114,84 @@ def test_confirmed_run_applies_patch_and_runs_tests(tmp_path: Path) -> None:
     assert result.applied_files == ["hello.txt"]
     assert result.test_output == "tests passed"
     assert executor.tests_run == 1
+    assert (tmp_path / "hello.txt").read_text(encoding="utf-8") == "hello world\n"
+
+
+def test_read_only_mode_allows_plan_but_blocks_patch_generation(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    provider = SequenceProvider("not a patch")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="read_only",
+    )
+
+    plan_state = runner.plan("update greeting")
+
+    assert "Update hello.txt" in plan_state.plan
+    try:
+        runner.generate_patch_from_plan(plan_state)
+    except PermissionDenied as exc:
+        assert "read_only" in str(exc)
+    else:
+        raise AssertionError("read_only mode should block patch generation")
+    assert len(provider.calls) == 1
+
+
+def test_suggest_mode_blocks_confirmed_auto_apply(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider(patch),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+    )
+
+    prepared = runner.prepare("update greeting")
+
+    try:
+        runner.apply_prepared(prepared, run_tests=False)
+    except PermissionDenied as exc:
+        assert "suggest" in str(exc)
+    else:
+        raise AssertionError("suggest mode should block confirmed auto apply")
+    assert prepared.pending_patch
+    assert (tmp_path / "hello.txt").read_text(encoding="utf-8") == "hello\n"
+
+
+def test_edit_mode_allows_confirmed_apply(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider(patch),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="edit",
+        executor=RecordingExecutor(),
+    )
+
+    prepared = runner.prepare("update greeting")
+    result = runner.apply_prepared(prepared, run_tests=False)
+
+    assert result.applied_files == ["hello.txt"]
     assert (tmp_path / "hello.txt").read_text(encoding="utf-8") == "hello world\n"
 
 

@@ -68,7 +68,7 @@ helmcode models select coding main_pool:some-coding-model
 
 `read_only`: read files, search code, and inspect git status only.
 
-`suggest`: generate patches but do not apply them automatically. This is the default.
+`suggest`: generate and review patches but do not apply them from `helmcode run`. This is the default. Use `helmcode diff` and `helmcode apply` to inspect and apply the pending patch.
 
 `edit`: apply patches after user confirmation and run safe verification commands.
 
