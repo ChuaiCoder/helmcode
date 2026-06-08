@@ -58,6 +58,18 @@ class AgentLoop:
         files = self.prepare_patch(response.content)
         return GeneratedPatch(content=response.content, files=files)
 
+    def generate_repair_patch(self, task: str, failing_output: str) -> GeneratedPatch:
+        if self.state.plan is None:
+            self.plan(task)
+        assert self.state.plan is not None
+        response: ModelResponse = self.coder.create_repair_patch(
+            task=task,
+            plan=self.state.plan.content,
+            failing_output=failing_output,
+        )
+        files = self.prepare_patch(response.content)
+        return GeneratedPatch(content=response.content, files=files)
+
     def apply_pending_patch(self, confirmed: bool) -> list[str]:
         if self.state.pending_patch is None:
             raise RuntimeError("No pending patch to apply")

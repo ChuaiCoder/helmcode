@@ -26,3 +26,21 @@ class Coder:
             ),
         ]
         return self.provider.chat(self.model_id, messages)
+
+    def create_repair_patch(self, task: str, plan: str, failing_output: str) -> ModelResponse:
+        built_context = ContextBuilder(self.workspace).build_for_task(task)
+        messages = [
+            ChatMessage(role="system", content=CODING_SYSTEM_PROMPT),
+            ChatMessage(
+                role="user",
+                content=(
+                    f"{built_context.text}\n\n"
+                    f"Original task:\n{task}\n\n"
+                    f"Approved plan:\n{plan}\n\n"
+                    f"Verification failed with this output:\n{failing_output}\n\n"
+                    "Generate a minimal unified diff patch to fix the failure. "
+                    "Return the patch only."
+                ),
+            ),
+        ]
+        return self.provider.chat(self.model_id, messages)

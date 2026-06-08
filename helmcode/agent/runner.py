@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from helmcode.agent.executor import TestRunResult
 from helmcode.agent.loop import AgentLoop
 from helmcode.agent.state import AgentPlan, AgentState
 from helmcode.context.workspace import Workspace
@@ -18,6 +19,7 @@ class RunResult:
     applied_files: list[str]
     test_output: str | None
     session_id: str
+    repair_attempts: int = 0
 
 
 @dataclass(slots=True)
@@ -29,6 +31,7 @@ class PlannedRun:
 
 @dataclass(slots=True)
 class PreparedRun:
+    task: str
     plan: str
     pending_patch: str
     patch_files: list[str]
@@ -46,6 +49,7 @@ class RunOrchestrator:
         coding_provider: ProviderAdapter | None = None,
         executor: object | None = None,
         session_store: SessionStore | None = None,
+        max_repair_attempts: int = 3,
     ) -> None:
         self.workspace = workspace
         self.provider = provider
@@ -55,6 +59,7 @@ class RunOrchestrator:
         self.permission_mode = permission_mode
         self.external_executor = executor
         self.session_store = session_store
+        self.max_repair_attempts = max_repair_attempts
 
     def run(self, task: str, confirmed: bool, run_tests: bool = True) -> RunResult:
         prepared = self.prepare(task)
@@ -66,6 +71,7 @@ class RunOrchestrator:
                 applied_files=[],
                 test_output=None,
                 session_id=prepared.session_id,
+                repair_attempts=0,
             )
         applied = self.apply_prepared(prepared, run_tests=run_tests)
         return RunResult(
@@ -75,6 +81,7 @@ class RunOrchestrator:
             applied_files=applied.applied_files,
             test_output=applied.test_output,
             session_id=prepared.session_id,
+            repair_attempts=applied.repair_attempts,
         )
 
     def plan(self, task: str) -> PlannedRun:
@@ -118,6 +125,7 @@ class RunOrchestrator:
         if state.pending_patch is None:
             raise RuntimeError("Coding model did not produce a pending patch")
         return PreparedRun(
+            task=planned.task,
             plan=planned.plan,
             pending_patch=state.pending_patch,
             patch_files=generated_patch.files,
@@ -127,7 +135,7 @@ class RunOrchestrator:
     def apply_prepared(self, prepared: PreparedRun, run_tests: bool = True) -> RunResult:
         state = AgentState.start(self.workspace.root_path, "")
         state.session_id = prepared.session_id
-        state.plan = None
+        state.plan = AgentPlan(content=prepared.plan)
         state.pending_patch = prepared.pending_patch
         agent = AgentLoop(
             workspace=self.workspace,
@@ -143,13 +151,47 @@ class RunOrchestrator:
         applied_files = agent.apply_pending_patch(confirmed=True)
         self._clear_pending_patch_file()
         self._record(prepared.session_id, "patch_applied", {"files": applied_files})
+        repair_attempts = 0
         if run_tests:
-            test_output = self._run_tests(agent)
+            test_result = self._run_tests(agent)
+            test_output = test_result.output
             self._record(
                 prepared.session_id,
                 "command_result",
-                {"command": "auto-detected tests", "output": test_output},
+                {"command": "auto-detected tests", "ok": test_result.ok, "output": test_output},
             )
+            while not test_result.ok and repair_attempts < self.max_repair_attempts:
+                repair_attempts += 1
+                repair_patch = agent.generate_repair_patch(prepared.task, test_result.output)
+                self._record(
+                    prepared.session_id,
+                    "patch_created",
+                    {
+                        "repair_attempt": repair_attempts,
+                        "files": repair_patch.files,
+                        "patch": repair_patch.content,
+                    },
+                )
+                repaired_files = agent.apply_pending_patch(confirmed=True)
+                applied_files.extend(repaired_files)
+                self._clear_pending_patch_file()
+                self._record(
+                    prepared.session_id,
+                    "patch_applied",
+                    {"repair_attempt": repair_attempts, "files": repaired_files},
+                )
+                test_result = self._run_tests(agent)
+                test_output = test_result.output
+                self._record(
+                    prepared.session_id,
+                    "command_result",
+                    {
+                        "command": "auto-detected tests",
+                        "repair_attempt": repair_attempts,
+                        "ok": test_result.ok,
+                        "output": test_result.output,
+                    },
+                )
 
         return RunResult(
             plan=prepared.plan,
@@ -158,12 +200,21 @@ class RunOrchestrator:
             applied_files=applied_files,
             test_output=test_output,
             session_id=prepared.session_id,
+            repair_attempts=repair_attempts,
         )
 
-    def _run_tests(self, agent: AgentLoop) -> str:
+    def _run_tests(self, agent: AgentLoop) -> TestRunResult:
         if self.external_executor is not None:
-            return str(self.external_executor.run_tests())
-        return agent.executor.run_tests()
+            return self._normalize_test_result(self.external_executor.run_tests())
+        return self._normalize_test_result(agent.executor.run_tests())
+
+    def _normalize_test_result(self, raw: object) -> TestRunResult:
+        if isinstance(raw, TestRunResult):
+            return raw
+        if isinstance(raw, tuple) and len(raw) == 2:
+            ok, output = raw
+            return TestRunResult(ok=bool(ok), output=str(output))
+        return TestRunResult(ok=True, output=str(raw))
 
     def _record(self, session_id: str, event_type: str, payload: dict[str, object]) -> None:
         if self.session_store is not None:

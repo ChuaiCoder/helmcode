@@ -26,6 +26,29 @@ class RecordingExecutor:
         return "tests passed"
 
 
+class SequencedPatchProvider:
+    def __init__(self, patches: list[str]) -> None:
+        self.patches = patches
+        self.calls: list[tuple[str, list[ChatMessage]]] = []
+
+    def chat(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
+        self.calls.append((model, messages))
+        if model == "fake:planning":
+            return ModelResponse(content="PLAN:\n1. Update hello.txt.\n2. Run pytest.")
+        return ModelResponse(content=self.patches.pop(0))
+
+
+class SequencedExecutor:
+    def __init__(self, outputs: list[tuple[bool, str]]) -> None:
+        self.outputs = outputs
+        self.tests_run = 0
+
+    def run_tests(self, command: str | None = None):
+        self.tests_run += 1
+        ok, output = self.outputs.pop(0)
+        return ok, output
+
+
 def test_plan_does_not_call_coding_provider(tmp_path: Path) -> None:
     (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
     workspace = Workspace.discover(tmp_path)
@@ -183,3 +206,121 @@ def test_runner_can_use_separate_coding_provider(tmp_path: Path) -> None:
     assert prepared.patch_files == ["hello.txt"]
     assert len(planning_provider.calls) == 1
     assert coding_provider.calls[-1][0] == "other:coding"
+
+
+def test_apply_prepared_repairs_after_failed_tests(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    first_patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++broken
+"""
+    repair_patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-broken
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    executor = SequencedExecutor(outputs=[(False, "assert broken"), (True, "tests passed")])
+    provider = SequencedPatchProvider([first_patch, repair_patch])
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="edit",
+        executor=executor,
+    )
+
+    result = runner.run("update greeting", confirmed=True, run_tests=True)
+
+    assert result.applied_files == ["hello.txt", "hello.txt"]
+    assert result.test_output == "tests passed"
+    assert result.repair_attempts == 1
+    assert executor.tests_run == 2
+    assert (tmp_path / "hello.txt").read_text(encoding="utf-8") == "hello world\n"
+    assert "assert broken" in provider.calls[-1][1][-1].content
+
+
+def test_apply_prepared_does_not_repair_when_tests_pass(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    executor = SequencedExecutor(outputs=[(True, "tests passed")])
+    provider = SequencedPatchProvider([patch])
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="edit",
+        executor=executor,
+    )
+
+    result = runner.run("update greeting", confirmed=True, run_tests=True)
+
+    assert result.repair_attempts == 0
+    assert len(provider.calls) == 2
+    assert result.test_output == "tests passed"
+
+
+def test_apply_prepared_stops_after_max_repair_attempts(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("0\n", encoding="utf-8")
+    patches = [
+        """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-0
++1
+""",
+        """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-1
++2
+""",
+        """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-2
++3
+""",
+        """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-3
++4
+""",
+    ]
+    workspace = Workspace.discover(tmp_path)
+    executor = SequencedExecutor(
+        outputs=[
+            (False, "fail 1"),
+            (False, "fail 2"),
+            (False, "fail 3"),
+            (False, "fail 4"),
+        ]
+    )
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequencedPatchProvider(patches),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="edit",
+        executor=executor,
+        max_repair_attempts=3,
+    )
+
+    result = runner.run("increment", confirmed=True, run_tests=True)
+
+    assert result.repair_attempts == 3
+    assert result.test_output == "fail 4"
+    assert executor.tests_run == 4
+    assert (tmp_path / "hello.txt").read_text(encoding="utf-8") == "4\n"

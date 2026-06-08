@@ -60,5 +60,7 @@ def run_task(
 
     apply_result = runner.apply_prepared(result, run_tests=not no_tests)
     console.print(f"Applied patch to: {', '.join(apply_result.applied_files) or 'none'}")
+    if apply_result.repair_attempts:
+        console.print(f"Repair attempts: {apply_result.repair_attempts}")
     if apply_result.test_output:
         console.print(Panel(apply_result.test_output, title="Tests"))

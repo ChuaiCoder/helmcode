@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from helmcode.patch.parser import PatchParser
 from helmcode.tools.shell import ShellTool
 from helmcode.tools.tests import RunTestsTool
 from helmcode.tools.write_patch import ApplyPatchTool, WritePatchTool
+
+
+@dataclass(slots=True)
+class TestRunResult:
+    ok: bool
+    output: str
 
 
 class Executor:
@@ -31,7 +38,7 @@ class Executor:
         files = result.data.get("files", [])
         return [str(file) for file in files]
 
-    def run_tests(self, command: str | None = None) -> str:
+    def run_tests(self, command: str | None = None) -> TestRunResult:
         result = self.tests_tool.run(
             {
                 "root_path": self.root_path,
@@ -39,4 +46,4 @@ class Executor:
                 "command": command,
             }
         )
-        return result.content
+        return TestRunResult(ok=result.ok, output=result.content)
