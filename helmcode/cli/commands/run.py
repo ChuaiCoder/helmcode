@@ -10,7 +10,7 @@ from rich.syntax import Syntax
 from helmcode.agent.runner import RunOrchestrator
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
-from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING
+from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING, MODEL_ROLE_REVIEW
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.model_registry import ModelRegistry
 from helmcode.models.selector import ModelSelector
@@ -30,9 +30,11 @@ def run_task(
     selector = ModelSelector(config.model_roles)
     planning_model_id = selector.select(MODEL_ROLE_PLANNING)
     coding_model_id = selector.select(MODEL_ROLE_CODING)
+    review_model_id = selector.select(MODEL_ROLE_REVIEW)
     registry = ModelRegistry.from_config(config)
     planning_provider = registry.provider_for_model(planning_model_id)
     coding_provider = registry.provider_for_model(coding_model_id)
+    review_provider = registry.provider_for_model(review_model_id)
     runner = RunOrchestrator(
         workspace=ws,
         provider=planning_provider,
@@ -40,6 +42,8 @@ def run_task(
         coding_model_id=coding_model_id,
         permission_mode=config.permission_mode,
         coding_provider=coding_provider,
+        review_provider=review_provider,
+        review_model_id=review_model_id,
         session_store=SessionStore(ws.root_path),
     )
     plan_state = runner.plan(task)
@@ -52,6 +56,8 @@ def run_task(
 
     result = runner.generate_patch_from_plan(plan_state)
     console.print(Syntax(result.pending_patch, "diff"))
+    if result.review:
+        console.print(Panel(result.review, title="Review"))
 
     confirmed = yes or typer.confirm("Apply this patch?")
     if not confirmed:

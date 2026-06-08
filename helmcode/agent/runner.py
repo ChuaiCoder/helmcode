@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from helmcode.agent.executor import TestRunResult
 from helmcode.agent.loop import AgentLoop
+from helmcode.agent.reviewer import Reviewer
 from helmcode.agent.state import AgentPlan, AgentState
 from helmcode.context.workspace import Workspace
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
@@ -20,6 +21,7 @@ class RunResult:
     test_output: str | None
     session_id: str
     repair_attempts: int = 0
+    review: str | None = None
 
 
 @dataclass(slots=True)
@@ -36,6 +38,7 @@ class PreparedRun:
     pending_patch: str
     patch_files: list[str]
     session_id: str
+    review: str | None = None
 
 
 class RunOrchestrator:
@@ -47,6 +50,8 @@ class RunOrchestrator:
         coding_model_id: str,
         permission_mode: str,
         coding_provider: ProviderAdapter | None = None,
+        review_provider: ProviderAdapter | None = None,
+        review_model_id: str | None = None,
         executor: object | None = None,
         session_store: SessionStore | None = None,
         max_repair_attempts: int = 3,
@@ -54,8 +59,10 @@ class RunOrchestrator:
         self.workspace = workspace
         self.provider = provider
         self.coding_provider = coding_provider or provider
+        self.review_provider = review_provider
         self.planning_model_id = planning_model_id
         self.coding_model_id = coding_model_id
+        self.review_model_id = review_model_id
         self.permission_mode = permission_mode
         self.external_executor = executor
         self.session_store = session_store
@@ -72,6 +79,7 @@ class RunOrchestrator:
                 test_output=None,
                 session_id=prepared.session_id,
                 repair_attempts=0,
+                review=prepared.review,
             )
         applied = self.apply_prepared(prepared, run_tests=run_tests)
         return RunResult(
@@ -82,6 +90,7 @@ class RunOrchestrator:
             test_output=applied.test_output,
             session_id=prepared.session_id,
             repair_attempts=applied.repair_attempts,
+            review=prepared.review,
         )
 
     def plan(self, task: str) -> PlannedRun:
@@ -122,6 +131,7 @@ class RunOrchestrator:
             "patch_created",
             {"files": generated_patch.files, "patch": generated_patch.content},
         )
+        review = self._review_patch(state.session_id, generated_patch.content)
         if state.pending_patch is None:
             raise RuntimeError("Coding model did not produce a pending patch")
         return PreparedRun(
@@ -130,6 +140,7 @@ class RunOrchestrator:
             pending_patch=state.pending_patch,
             patch_files=generated_patch.files,
             session_id=state.session_id,
+            review=review,
         )
 
     def apply_prepared(self, prepared: PreparedRun, run_tests: bool = True) -> RunResult:
@@ -201,6 +212,7 @@ class RunOrchestrator:
             test_output=test_output,
             session_id=prepared.session_id,
             repair_attempts=repair_attempts,
+            review=prepared.review,
         )
 
     def _run_tests(self, agent: AgentLoop) -> TestRunResult:
@@ -223,3 +235,10 @@ class RunOrchestrator:
     def _clear_pending_patch_file(self) -> None:
         patch_path = self.workspace.root_path / SESSION_DIR_NAME / PENDING_PATCH_FILE
         patch_path.unlink(missing_ok=True)
+
+    def _review_patch(self, session_id: str, patch: str) -> str | None:
+        if self.review_provider is None or self.review_model_id is None:
+            return None
+        review = Reviewer(self.review_provider, self.review_model_id).review_patch(patch)
+        self._record(session_id, "patch_reviewed", {"content": review.content})
+        return review.content

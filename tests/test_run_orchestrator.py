@@ -49,6 +49,24 @@ class SequencedExecutor:
         return ok, output
 
 
+class ReviewProvider:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.calls: list[tuple[str, list[ChatMessage]]] = []
+
+    def chat(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
+        self.calls.append((model, messages))
+        return ModelResponse(content=self.content)
+
+
+class RecordingSessionStore:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, dict[str, object]]] = []
+
+    def record(self, session_id: str, event_type: str, payload: dict[str, object]) -> None:
+        self.events.append((session_id, event_type, payload))
+
+
 def test_plan_does_not_call_coding_provider(tmp_path: Path) -> None:
     (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
     workspace = Workspace.discover(tmp_path)
@@ -206,6 +224,90 @@ def test_runner_can_use_separate_coding_provider(tmp_path: Path) -> None:
     assert prepared.patch_files == ["hello.txt"]
     assert len(planning_provider.calls) == 1
     assert coding_provider.calls[-1][0] == "other:coding"
+
+
+def test_generate_patch_reviews_patch_when_review_model_is_configured(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    review_provider = ReviewProvider("LGTM: tests should pass")
+    store = RecordingSessionStore()
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider(patch),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        review_provider=review_provider,
+        review_model_id="fake:review",
+        session_store=store,
+    )
+
+    prepared = runner.prepare("update greeting")
+
+    assert prepared.review == "LGTM: tests should pass"
+    assert review_provider.calls[-1][0] == "fake:review"
+    assert patch in review_provider.calls[-1][1][-1].content
+    assert any(event_type == "patch_reviewed" for _sid, event_type, _payload in store.events)
+
+
+def test_generate_patch_skips_review_when_review_model_is_not_configured(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    review_provider = ReviewProvider("should not be called")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider(patch),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        review_provider=review_provider,
+    )
+
+    prepared = runner.prepare("update greeting")
+
+    assert prepared.review is None
+    assert review_provider.calls == []
+
+
+def test_generate_patch_can_use_separate_review_provider(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    coding_provider = SequenceProvider(patch)
+    review_provider = ReviewProvider("reviewed by separate provider")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider("not used for patch"),
+        planning_model_id="fake:planning",
+        coding_model_id="coding:model",
+        permission_mode="suggest",
+        coding_provider=coding_provider,
+        review_provider=review_provider,
+        review_model_id="review:model",
+    )
+
+    prepared = runner.prepare("update greeting")
+
+    assert prepared.review == "reviewed by separate provider"
+    assert coding_provider.calls[-1][0] == "coding:model"
+    assert review_provider.calls[-1][0] == "review:model"
 
 
 def test_apply_prepared_repairs_after_failed_tests(tmp_path: Path) -> None:
