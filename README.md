@@ -62,6 +62,8 @@ helmcode models list
 helmcode models select coding main_pool:some-coding-model
 ```
 
+`helmcode run` performs the main Agent workflow: generate a plan, ask whether to continue, generate a unified diff patch, show the diff, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. Use `--yes` for non-interactive approval of both confirmations.
+
 ## Permission Modes
 
 `read_only`: read files, search code, and inspect git status only.
