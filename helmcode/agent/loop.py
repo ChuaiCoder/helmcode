@@ -28,6 +28,7 @@ class AgentLoop:
         permission_mode: str = "suggest",
         coding_model_id: str | None = None,
         coding_provider: ProviderAdapter | None = None,
+        executor: Executor | None = None,
     ) -> None:
         self.workspace = workspace
         self.model_provider = model_provider
@@ -38,7 +39,7 @@ class AgentLoop:
         self.permission_mode = permission_mode
         self.planner = Planner(workspace, model_provider, model_id)
         self.coder = Coder(workspace, self.coding_provider, self.coding_model_id)
-        self.executor = Executor(workspace.root_path, permission_mode=permission_mode)
+        self.executor = executor or Executor(workspace.root_path, permission_mode=permission_mode)
 
     def plan(self, task: str) -> AgentPlan:
         response: ModelResponse = self.planner.create_plan(task)

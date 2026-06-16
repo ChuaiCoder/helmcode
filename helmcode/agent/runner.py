@@ -107,6 +107,7 @@ class RunOrchestrator:
             permission_mode=self.permission_mode,
             coding_model_id=self.coding_model_id,
             coding_provider=self.coding_provider,
+            executor=self.external_executor,
         )
         plan = agent.plan(task)
         self._record(state.session_id, "plan_created", {"content": plan.content})
@@ -128,6 +129,7 @@ class RunOrchestrator:
             permission_mode=self.permission_mode,
             coding_model_id=self.coding_model_id,
             coding_provider=self.coding_provider,
+            executor=self.external_executor,
         )
         state.plan = AgentPlan(content=planned.plan)
         generated_patch = agent.generate_patch(planned.task)
@@ -163,6 +165,7 @@ class RunOrchestrator:
             permission_mode=self.permission_mode,
             coding_model_id=self.coding_model_id,
             coding_provider=self.coding_provider,
+            executor=self.external_executor,
         )
         applied_files: list[str] = []
         test_output: str | None = None

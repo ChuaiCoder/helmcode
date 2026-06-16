@@ -34,6 +34,19 @@ class OpenAICompatibleProvider(ProviderAdapter):
             if isinstance(item, dict) and item.get("id")
         ]
 
+    async def list_models_async(self) -> list[ModelInfo]:
+        url = self.config.base_url.rstrip("/") + "/models"
+        async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
+            response = await client.get(url, headers=self._headers)
+            response.raise_for_status()
+        payload = response.json()
+        items = payload.get("data", payload if isinstance(payload, list) else [])
+        return [
+            ModelInfo(id=f"{self.id}:{item['id']}", provider_id=self.id, raw=item)
+            for item in items
+            if isinstance(item, dict) and item.get("id")
+        ]
+
     def chat(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
         provider_prefix = f"{self.id}:"
         provider_model = model[len(provider_prefix) :] if model.startswith(provider_prefix) else model
@@ -44,6 +57,24 @@ class OpenAICompatibleProvider(ProviderAdapter):
         }
         with httpx.Client(timeout=self.config.timeout_seconds) as client:
             response = client.post(url, headers=self._headers, json=body)
+            response.raise_for_status()
+        payload = response.json()
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ModelError("Provider response did not include choices[0].message.content") from exc
+        return ModelResponse(content=content, raw=payload)
+
+    async def chat_async(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
+        provider_prefix = f"{self.id}:"
+        provider_model = model[len(provider_prefix) :] if model.startswith(provider_prefix) else model
+        url = self.config.base_url.rstrip("/") + "/chat/completions"
+        body = {
+            "model": provider_model,
+            "messages": [message.model_dump() for message in messages],
+        }
+        async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
+            response = await client.post(url, headers=self._headers, json=body)
             response.raise_for_status()
         payload = response.json()
         try:

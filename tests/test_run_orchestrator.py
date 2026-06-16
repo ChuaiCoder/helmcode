@@ -19,8 +19,41 @@ class SequenceProvider:
 
 
 class RecordingExecutor:
-    def __init__(self) -> None:
+    def __init__(self, root_path: Path | None = None) -> None:
+        self.root_path = root_path
         self.tests_run = 0
+        self.patches_prepared: list[str] = []
+        self.patches_applied: list[str] = []
+
+    def prepare_patch(self, patch: str) -> list[str]:
+        self.patches_prepared.append(patch)
+        if self.root_path:
+            pending_dir = self.root_path / ".helmcode"
+            pending_dir.mkdir(parents=True, exist_ok=True)
+            (pending_dir / "pending.patch").write_text(patch, encoding="utf-8")
+        return ["hello.txt"]
+
+    def apply_patch(self, patch: str, confirmed: bool) -> list[str]:
+        if not confirmed:
+            return []
+        self.patches_applied.append(patch)
+        if self.root_path:
+            self._simulate_apply(patch)
+        return ["hello.txt"]
+
+    def _simulate_apply(self, patch: str) -> None:
+        if not self.root_path:
+            return
+        lines = patch.split("\n")
+        for i, line in enumerate(lines):
+            if line.startswith("+") and not line.startswith("+++"):
+                content = line[1:]
+                if i + 1 < len(lines) and lines[i + 1].startswith("-"):
+                    continue
+                file_path = self.root_path / "hello.txt"
+                if file_path.exists():
+                    file_path.write_text(content + "\n", encoding="utf-8")
+                    break
 
     def run_tests(self, command: str | None = None) -> str:
         self.tests_run += 1
@@ -40,9 +73,42 @@ class SequencedPatchProvider:
 
 
 class SequencedExecutor:
-    def __init__(self, outputs: list[tuple[bool, str]]) -> None:
+    def __init__(self, outputs: list[tuple[bool, str]], root_path: Path | None = None) -> None:
         self.outputs = outputs
+        self.root_path = root_path
         self.tests_run = 0
+        self.patches_prepared: list[str] = []
+        self.patches_applied: list[str] = []
+
+    def prepare_patch(self, patch: str) -> list[str]:
+        self.patches_prepared.append(patch)
+        if self.root_path:
+            pending_dir = self.root_path / ".helmcode"
+            pending_dir.mkdir(parents=True, exist_ok=True)
+            (pending_dir / "pending.patch").write_text(patch, encoding="utf-8")
+        return ["hello.txt"]
+
+    def apply_patch(self, patch: str, confirmed: bool) -> list[str]:
+        if not confirmed:
+            return []
+        self.patches_applied.append(patch)
+        if self.root_path:
+            self._simulate_apply(patch)
+        return ["hello.txt"]
+
+    def _simulate_apply(self, patch: str) -> None:
+        if not self.root_path:
+            return
+        lines = patch.split("\n")
+        for i, line in enumerate(lines):
+            if line.startswith("+") and not line.startswith("+++"):
+                content = line[1:]
+                if i + 1 < len(lines) and lines[i + 1].startswith("-"):
+                    continue
+                file_path = self.root_path / "hello.txt"
+                if file_path.exists():
+                    file_path.write_text(content + "\n", encoding="utf-8")
+                    break
 
     def run_tests(self, command: str | None = None):
         self.tests_run += 1
@@ -78,8 +144,8 @@ def test_plan_does_not_call_coding_provider(tmp_path: Path) -> None:
         provider=planning_provider,
         planning_model_id="fake:planning",
         coding_model_id="fake:coding",
-        permission_mode="suggest",
-        coding_provider=coding_provider,
+        permission_mode="edit",
+        executor=RecordingExecutor(root_path=tmp_path),
     )
 
     plan_state = runner.plan("update greeting")
@@ -99,7 +165,7 @@ def test_confirmed_run_applies_patch_and_runs_tests(tmp_path: Path) -> None:
 +hello world
 """
     workspace = Workspace.discover(tmp_path)
-    executor = RecordingExecutor()
+    executor = RecordingExecutor(root_path=tmp_path)
     runner = RunOrchestrator(
         workspace=workspace,
         provider=SequenceProvider(patch),
@@ -185,7 +251,7 @@ def test_edit_mode_allows_confirmed_apply(tmp_path: Path) -> None:
         planning_model_id="fake:planning",
         coding_model_id="fake:coding",
         permission_mode="edit",
-        executor=RecordingExecutor(),
+        executor=RecordingExecutor(root_path=tmp_path),
     )
 
     prepared = runner.prepare("update greeting")
@@ -230,7 +296,7 @@ def test_apply_prepared_result_does_not_call_model_again(tmp_path: Path) -> None
 """
     provider = SequenceProvider(patch)
     workspace = Workspace.discover(tmp_path)
-    executor = RecordingExecutor()
+    executor = RecordingExecutor(root_path=tmp_path)
     runner = RunOrchestrator(
         workspace=workspace,
         provider=provider,
@@ -265,7 +331,7 @@ def test_apply_prepared_removes_pending_patch_file(tmp_path: Path) -> None:
         planning_model_id="fake:planning",
         coding_model_id="fake:coding",
         permission_mode="edit",
-        executor=RecordingExecutor(),
+        executor=RecordingExecutor(root_path=tmp_path),
     )
 
     prepared = runner.prepare("update greeting")
@@ -404,7 +470,7 @@ def test_apply_prepared_repairs_after_failed_tests(tmp_path: Path) -> None:
 +hello world
 """
     workspace = Workspace.discover(tmp_path)
-    executor = SequencedExecutor(outputs=[(False, "assert broken"), (True, "tests passed")])
+    executor = SequencedExecutor(outputs=[(False, "assert broken"), (True, "tests passed")], root_path=tmp_path)
     provider = SequencedPatchProvider([first_patch, repair_patch])
     runner = RunOrchestrator(
         workspace=workspace,
@@ -434,7 +500,7 @@ def test_apply_prepared_does_not_repair_when_tests_pass(tmp_path: Path) -> None:
 +hello world
 """
     workspace = Workspace.discover(tmp_path)
-    executor = SequencedExecutor(outputs=[(True, "tests passed")])
+    executor = SequencedExecutor(outputs=[(True, "tests passed")], root_path=tmp_path)
     provider = SequencedPatchProvider([patch])
     runner = RunOrchestrator(
         workspace=workspace,
@@ -487,7 +553,8 @@ def test_apply_prepared_stops_after_max_repair_attempts(tmp_path: Path) -> None:
             (False, "fail 2"),
             (False, "fail 3"),
             (False, "fail 4"),
-        ]
+        ],
+        root_path=tmp_path,
     )
     runner = RunOrchestrator(
         workspace=workspace,

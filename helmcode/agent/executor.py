@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from helmcode.patch.parser import PatchParser
 from helmcode.tools.shell import ShellTool
@@ -16,13 +17,21 @@ class TestRunResult:
 
 
 class Executor:
-    def __init__(self, root_path: Path, permission_mode: str = "suggest") -> None:
+    def __init__(
+        self,
+        root_path: Path,
+        permission_mode: str = "suggest",
+        write_patch_tool: Any | None = None,
+        apply_patch_tool: Any | None = None,
+        shell_tool: Any | None = None,
+        tests_tool: Any | None = None,
+    ) -> None:
         self.root_path = root_path
         self.permission_mode = permission_mode
-        self.write_patch_tool = WritePatchTool()
-        self.apply_patch_tool = ApplyPatchTool()
-        self.shell_tool = ShellTool()
-        self.tests_tool = RunTestsTool(self.shell_tool)
+        self.write_patch_tool = write_patch_tool or WritePatchTool()
+        self.apply_patch_tool = apply_patch_tool or ApplyPatchTool()
+        self.shell_tool = shell_tool or ShellTool()
+        self.tests_tool = tests_tool or RunTestsTool(self.shell_tool)
 
     def prepare_patch(self, patch: str) -> list[str]:
         parsed = PatchParser().parse(patch)

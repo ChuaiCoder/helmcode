@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import typer
+
+from helmcode.cli.commands import apply as apply_command
 from helmcode.cli.commands.apply import apply_pending_patch
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
 from helmcode.core.exceptions import PermissionDenied
@@ -52,3 +55,25 @@ def test_apply_pending_patch_records_session_event(tmp_path: Path) -> None:
     assert not (tmp_path / SESSION_DIR_NAME / PENDING_PATCH_FILE).exists()
     assert store.events[0][1] == "patch_applied"
     assert store.events[0][2]["files"] == ["hello.txt"]
+
+
+def test_apply_last_patch_preserves_no_pending_patch_exit_code(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    handled: list[Exception] = []
+
+    def record_error(exc: Exception):
+        handled.append(exc)
+        raise AssertionError("typer.Exit should not be passed to the generic error handler")
+
+    monkeypatch.setattr(apply_command.error_handler, "handle", record_error)
+
+    try:
+        apply_command.apply_last_patch(workspace=tmp_path, yes=True)
+    except typer.Exit as exc:
+        assert exc.exit_code == 1
+    else:
+        raise AssertionError("missing pending patch should exit")
+
+    assert handled == []

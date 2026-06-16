@@ -31,3 +31,9 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def chat(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
         raise NotImplementedError
+
+    async def list_models_async(self) -> list[ModelInfo]:
+        return self.list_models()
+
+    async def chat_async(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
+        return self.chat(model, messages)
