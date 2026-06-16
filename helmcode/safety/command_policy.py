@@ -5,6 +5,8 @@ import shlex
 from dataclasses import dataclass
 from enum import Enum
 
+from helmcode.safety.ast_command_analyzer import ASTCommandAnalyzer
+
 
 class CommandRisk(str, Enum):
     LOW = "low"
@@ -67,6 +69,10 @@ class CommandPolicy:
         "uv",
     }
 
+    def __init__(self, use_ast_analysis: bool = True) -> None:
+        self.use_ast_analysis = use_ast_analysis
+        self.ast_analyzer = ASTCommandAnalyzer() if use_ast_analysis else None
+
     def check(self, command: str, permission_mode: str = "suggest") -> CommandPolicyResult:
         normalized = command.strip()
         lowered = normalized.lower()
@@ -91,6 +97,17 @@ class CommandPolicy:
                     risk=CommandRisk.HIGH,
                     requires_confirmation=True,
                     reason=f"command requires explicit confirmation: {match.group(0)}",
+                )
+
+        if self.use_ast_analysis and self.ast_analyzer:
+            ast_result = self.ast_analyzer.analyze(command)
+            if not ast_result.is_safe:
+                risk = CommandRisk.BLOCKED if ast_result.risk_level == "blocked" else CommandRisk.HIGH
+                return CommandPolicyResult(
+                    allowed=False,
+                    risk=risk,
+                    requires_confirmation=True,
+                    reason=f"AST analysis detected: {', '.join(ast_result.reasons)}",
                 )
 
         if permission_mode == "read_only" and not self._is_read_only(normalized):
