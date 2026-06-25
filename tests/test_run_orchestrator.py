@@ -1,8 +1,11 @@
 from pathlib import Path
 
+from helmcode.agent.runtime import AgentRuntime
 from helmcode.agent.runner import RunOrchestrator
 from helmcode.context.workspace import Workspace
+from helmcode.core.config import HelmcodeConfig
 from helmcode.core.exceptions import PermissionDenied
+from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
 from helmcode.models.provider import ChatMessage, ModelResponse
 
 
@@ -369,6 +372,46 @@ def test_runner_can_use_separate_coding_provider(tmp_path: Path) -> None:
     assert prepared.patch_files == ["hello.txt"]
     assert len(planning_provider.calls) == 1
     assert coding_provider.calls[-1][0] == "other:coding"
+
+
+def test_runner_runtime_records_model_calls_to_quota_ledger(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+            "review": "fake:review",
+        }
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, ledger),
+    )
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider(patch),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+    )
+
+    runner.prepare("update greeting")
+
+    records = ledger.load()
+    assert [(record.role, record.model_id) for record in records] == [
+        ("planning", "fake:planning"),
+        ("coding", "fake:coding"),
+    ]
 
 
 def test_generate_patch_reviews_patch_when_review_model_is_configured(tmp_path: Path) -> None:

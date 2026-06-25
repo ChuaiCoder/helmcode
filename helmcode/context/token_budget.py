@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 try:
     import tiktoken
@@ -15,13 +16,7 @@ class TokenBudget:
     max_chars: int = 32_000  # fallback when tiktoken unavailable
 
     def __post_init__(self) -> None:
-        if TIKTOKEN_AVAILABLE:
-            try:
-                self._encoding = tiktoken.get_encoding("cl100k_base")
-            except Exception:
-                self._encoding = None
-        else:
-            self._encoding = None
+        self._encoding = _load_encoding()
 
     def _count_tokens(self, text: str) -> int:
         if self._encoding is not None:
@@ -66,3 +61,17 @@ class TokenBudget:
         tokens = self._encoding.encode(text)
         truncated_tokens = tokens[:max_tokens]
         return self._encoding.decode(truncated_tokens)
+
+    @property
+    def tokenizer_available(self) -> bool:
+        return self._encoding is not None
+
+
+@lru_cache(maxsize=1)
+def _load_encoding():
+    if not TIKTOKEN_AVAILABLE:
+        return None
+    try:
+        return tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        return None

@@ -1,4 +1,5 @@
 permission_mode: suggest
+routing_mode: quota
 providers:
   - id: main_pool
     type: openai_compatible
@@ -12,3 +13,5 @@ model_roles:
   review: main_pool:configure-a-review-model
 shell_timeout_seconds: 120
 max_read_chars: 20000
+model_profiles: []
+quota_policies: []

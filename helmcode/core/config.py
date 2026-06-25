@@ -5,12 +5,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from helmcode.core.constants import DEFAULT_PERMISSION_MODE
 from helmcode.core.exceptions import ConfigError
 
 PermissionMode = Literal["read_only", "suggest", "edit", "auto"]
+RoutingMode = Literal["fixed", "quota", "recommend"]
+QuotaUnit = Literal["request", "prompt_call", "token", "lane", "credit"]
+QuotaWindowType = Literal["rolling", "calendar_day", "calendar_week", "calendar_month"]
+CostTier = Literal["low", "medium", "high"]
 
 
 class ProviderConfig(BaseModel):
@@ -25,10 +29,51 @@ class ProviderConfig(BaseModel):
         return bool(os.getenv(self.api_key_env))
 
 
+class ModelProfileConfig(BaseModel):
+    id: str
+    labels: list[str] = Field(default_factory=list)
+    preferred_for: list[str] = Field(default_factory=list)
+    cost_tier: CostTier = "medium"
+    fallback_models: list[str] = Field(default_factory=list)
+
+
+class QuotaWindowConfig(BaseModel):
+    name: str
+    type: QuotaWindowType
+    limit: int = Field(gt=0)
+    duration_seconds: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_window(self) -> "QuotaWindowConfig":
+        if self.type == "rolling" and self.duration_seconds is None:
+            raise ValueError("rolling quota windows require duration_seconds")
+        if self.type != "rolling" and self.duration_seconds is not None:
+            raise ValueError("duration_seconds is only valid for rolling quota windows")
+        return self
+
+
+class QuotaPolicyConfig(BaseModel):
+    id: str
+    model_patterns: list[str] = Field(default_factory=list)
+    unit: QuotaUnit = "request"
+    windows: list[QuotaWindowConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_policy(self) -> "QuotaPolicyConfig":
+        if not self.model_patterns:
+            raise ValueError("quota policies require at least one model pattern")
+        if not self.windows:
+            raise ValueError("quota policies require at least one window")
+        return self
+
+
 class HelmcodeConfig(BaseModel):
     permission_mode: PermissionMode = DEFAULT_PERMISSION_MODE
+    routing_mode: RoutingMode = "quota"
     providers: list[ProviderConfig] = Field(default_factory=list)
     model_roles: dict[str, str] = Field(default_factory=dict)
+    model_profiles: list[ModelProfileConfig] = Field(default_factory=list)
+    quota_policies: list[QuotaPolicyConfig] = Field(default_factory=list)
     shell_timeout_seconds: int = 120
     max_read_chars: int = 20_000
 

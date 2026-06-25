@@ -7,3 +7,29 @@ roles:
     purpose: unified diff patch generation
   review:
     purpose: patch review, safety review, and missing-test checks
+task_types:
+  classify:
+    purpose: lightweight task classification and routing
+  repo_scan:
+    purpose: file discovery and low-cost repository inspection
+  plan:
+    purpose: reasoning-heavy task decomposition
+  code_patch:
+    purpose: code generation and unified diff creation
+  repair:
+    purpose: test-failure repair after a patch is applied
+  review:
+    purpose: independent patch review
+  summarize:
+    purpose: context compression and summaries
+quota_units:
+  request:
+    purpose: one model API request consumes one unit
+  prompt_call:
+    purpose: provider-specific prompt invocation count
+  token:
+    purpose: token-metered plans
+  lane:
+    purpose: concurrent lane-style plans
+  credit:
+    purpose: generic credit-based plans

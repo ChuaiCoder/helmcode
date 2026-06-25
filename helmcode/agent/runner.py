@@ -5,12 +5,21 @@ from dataclasses import dataclass
 from helmcode.agent.executor import TestRunResult
 from helmcode.agent.loop import AgentLoop
 from helmcode.agent.reviewer import Reviewer
+from helmcode.agent.runtime import AgentRuntime
+from helmcode.agent.session import AgentSession
 from helmcode.agent.state import AgentPlan, AgentState
 from helmcode.context.workspace import Workspace
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
 from helmcode.core.exceptions import PermissionDenied
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ProviderAdapter
+from helmcode.models.quota import (
+    TASK_CODE_PATCH,
+    TASK_PLAN,
+    TASK_REPAIR,
+    TASK_REVIEW,
+    ModelSelection,
+)
 from helmcode.safety.permissions import PermissionMode
 
 
@@ -56,6 +65,7 @@ class RunOrchestrator:
         review_model_id: str | None = None,
         executor: object | None = None,
         session_store: SessionStore | None = None,
+        runtime: AgentRuntime | None = None,
         max_repair_attempts: int = 3,
     ) -> None:
         self.workspace = workspace
@@ -69,6 +79,7 @@ class RunOrchestrator:
         self.mode = PermissionMode.normalize(permission_mode)
         self.external_executor = executor
         self.session_store = session_store
+        self.runtime = runtime
         self.max_repair_attempts = max_repair_attempts
 
     def run(self, task: str, confirmed: bool, run_tests: bool = True) -> RunResult:
@@ -98,11 +109,21 @@ class RunOrchestrator:
 
     def plan(self, task: str) -> PlannedRun:
         state = AgentState.start(self.workspace.root_path, task)
+        session = self._session_from_state(state, task)
         self._record(state.session_id, "user_message", {"content": task})
+        selection = self._select_model(
+            session=session,
+            role="planning",
+            task_type=TASK_PLAN,
+            task=task,
+            fallback_model_id=self.planning_model_id,
+            default_provider=self.provider,
+        )
+        planning_provider = self._provider_for(selection, self.provider)
         agent = AgentLoop(
             workspace=self.workspace,
-            model_provider=self.provider,
-            model_id=self.planning_model_id,
+            model_provider=planning_provider,
+            model_id=selection.model_id,
             state=state,
             permission_mode=self.permission_mode,
             coding_model_id=self.coding_model_id,
@@ -110,6 +131,7 @@ class RunOrchestrator:
             executor=self.external_executor,
         )
         plan = agent.plan(task)
+        self._record_model_call(session, selection)
         self._record(state.session_id, "plan_created", {"content": plan.content})
         return PlannedRun(task=task, plan=plan.content, session_id=state.session_id)
 
@@ -121,24 +143,39 @@ class RunOrchestrator:
             raise PermissionDenied(f"{self.permission_mode} mode blocks patch generation")
         state = AgentState.start(self.workspace.root_path, planned.task)
         state.session_id = planned.session_id
+        session = self._session_from_state(state, planned.task)
+        selection = self._select_model(
+            session=session,
+            role="coding",
+            task_type=TASK_CODE_PATCH,
+            task=planned.task,
+            fallback_model_id=self.coding_model_id,
+            default_provider=self.coding_provider,
+        )
+        coding_provider = self._provider_for(selection, self.coding_provider)
         agent = AgentLoop(
             workspace=self.workspace,
             model_provider=self.provider,
             model_id=self.planning_model_id,
             state=state,
             permission_mode=self.permission_mode,
-            coding_model_id=self.coding_model_id,
-            coding_provider=self.coding_provider,
+            coding_model_id=selection.model_id,
+            coding_provider=coding_provider,
             executor=self.external_executor,
         )
         state.plan = AgentPlan(content=planned.plan)
         generated_patch = agent.generate_patch(planned.task)
+        self._record_model_call(session, selection)
         self._record(
             state.session_id,
             "patch_created",
             {"files": generated_patch.files, "patch": generated_patch.content},
         )
-        review = self._review_patch(state.session_id, generated_patch.content)
+        review = self._review_patch(
+            session=session,
+            patch=generated_patch.content,
+            coding_model_id=selection.model_id,
+        )
         if state.pending_patch is None:
             raise RuntimeError("Coding model did not produce a pending patch")
         return PreparedRun(
@@ -157,6 +194,7 @@ class RunOrchestrator:
         state.session_id = prepared.session_id
         state.plan = AgentPlan(content=prepared.plan)
         state.pending_patch = prepared.pending_patch
+        session = self._session_from_state(state, prepared.task)
         agent = AgentLoop(
             workspace=self.workspace,
             model_provider=self.provider,
@@ -183,7 +221,27 @@ class RunOrchestrator:
             )
             while not test_result.ok and repair_attempts < self.max_repair_attempts:
                 repair_attempts += 1
-                repair_patch = agent.generate_repair_patch(prepared.task, test_result.output)
+                repair_selection = self._select_model(
+                    session=session,
+                    role="coding",
+                    task_type=TASK_REPAIR,
+                    task=prepared.task,
+                    fallback_model_id=self.coding_model_id,
+                    default_provider=self.coding_provider,
+                )
+                repair_provider = self._provider_for(repair_selection, self.coding_provider)
+                repair_agent = AgentLoop(
+                    workspace=self.workspace,
+                    model_provider=self.provider,
+                    model_id=self.planning_model_id,
+                    state=state,
+                    permission_mode=self.permission_mode,
+                    coding_model_id=repair_selection.model_id,
+                    coding_provider=repair_provider,
+                    executor=self.external_executor,
+                )
+                repair_patch = repair_agent.generate_repair_patch(prepared.task, test_result.output)
+                self._record_model_call(session, repair_selection)
                 self._record(
                     prepared.session_id,
                     "patch_created",
@@ -193,7 +251,7 @@ class RunOrchestrator:
                         "patch": repair_patch.content,
                     },
                 )
-                repaired_files = agent.apply_pending_patch(confirmed=True)
+                repaired_files = repair_agent.apply_pending_patch(confirmed=True)
                 applied_files.extend(repaired_files)
                 self._clear_pending_patch_file()
                 self._record(
@@ -201,7 +259,7 @@ class RunOrchestrator:
                     "patch_applied",
                     {"repair_attempt": repair_attempts, "files": repaired_files},
                 )
-                test_result = self._run_tests(agent)
+                test_result = self._run_tests(repair_agent)
                 test_output = test_result.output
                 self._record(
                     prepared.session_id,
@@ -246,9 +304,69 @@ class RunOrchestrator:
         patch_path = self.workspace.root_path / SESSION_DIR_NAME / PENDING_PATCH_FILE
         patch_path.unlink(missing_ok=True)
 
-    def _review_patch(self, session_id: str, patch: str) -> str | None:
+    def _review_patch(self, session: AgentSession, patch: str, coding_model_id: str) -> str | None:
         if self.review_provider is None or self.review_model_id is None:
             return None
-        review = Reviewer(self.review_provider, self.review_model_id).review_patch(patch)
-        self._record(session_id, "patch_reviewed", {"content": review.content})
+        selection = self._select_model(
+            session=session,
+            role="review",
+            task_type=TASK_REVIEW,
+            task=patch,
+            fallback_model_id=self.review_model_id,
+            default_provider=self.review_provider,
+            prefer_different_from=coding_model_id,
+        )
+        review_provider = self._provider_for(selection, self.review_provider)
+        review = Reviewer(review_provider, selection.model_id).review_patch(patch)
+        self._record_model_call(session, selection)
+        self._record(session.session_id, "patch_reviewed", {"content": review.content})
         return review.content
+
+    def _session_from_state(self, state: AgentState, task: str) -> AgentSession:
+        return AgentSession(
+            session_id=state.session_id,
+            workspace_path=state.workspace_path,
+            user_task=task,
+            created_at=state.created_at,
+        )
+
+    def _select_model(
+        self,
+        *,
+        session: AgentSession,
+        role: str,
+        task_type: str,
+        task: str,
+        fallback_model_id: str,
+        default_provider: ProviderAdapter,
+        prefer_different_from: str | None = None,
+    ) -> ModelSelection:
+        if self.runtime is None:
+            return ModelSelection(
+                model_id=fallback_model_id,
+                role=role,
+                task_type=task_type,
+                reason=f"fixed role mapping for {role}",
+                routing_mode="fixed",
+            )
+        return self.runtime.select_model(
+            session=session,
+            role=role,
+            task_type=task_type,
+            task=task,
+            fallback_model_id=fallback_model_id,
+            prefer_different_from=prefer_different_from,
+        )
+
+    def _provider_for(
+        self,
+        selection: ModelSelection,
+        default_provider: ProviderAdapter,
+    ) -> ProviderAdapter:
+        if self.runtime is None:
+            return default_provider
+        return self.runtime.provider_for_model(selection.model_id, default_provider)
+
+    def _record_model_call(self, session: AgentSession, selection: ModelSelection) -> None:
+        if self.runtime is not None:
+            self.runtime.record_model_call(session, selection)

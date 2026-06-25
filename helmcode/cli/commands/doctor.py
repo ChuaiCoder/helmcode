@@ -14,6 +14,7 @@ from rich.table import Table
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.core.error_handler import ErrorHandler, ErrorResponse
+from helmcode.models.quota import QuotaLedger
 
 console = Console()
 error_handler = ErrorHandler(verbose=False)
@@ -52,6 +53,21 @@ def doctor(workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w")) -> N
         _row(table, "test command", bool(ws.test_commands), ", ".join(ws.test_commands) or "not detected")
         _row(table, "languages", bool(ws.detected_languages), ", ".join(ws.detected_languages) or "unknown")
         _row(table, "frameworks", bool(ws.detected_frameworks), ", ".join(ws.detected_frameworks) or "unknown")
+        _row(table, "routing mode", config.routing_mode in {"fixed", "quota", "recommend"}, config.routing_mode)
+        _row(
+            table,
+            "model profiles",
+            True,
+            f"{len(config.model_profiles)} configured",
+        )
+        _row(
+            table,
+            "quota policies",
+            True,
+            f"{len(config.quota_policies)} configured",
+        )
+        ledger_path = QuotaLedger.for_workspace(ws.root_path).path
+        _row(table, "quota ledger", True, str(ledger_path))
         _row(table, "model reachability", _can_probe_models(config), "GET /models for configured providers")
 
         console.print(table)
