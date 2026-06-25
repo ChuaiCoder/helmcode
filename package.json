@@ -1,0 +1,26 @@
+{
+  "name": "helmcode",
+  "version": "0.1.0",
+  "description": "CLI-first local codebase agent with quota-aware model routing.",
+  "license": "MIT",
+  "bin": {
+    "helmcode": "bin/helmcode.js"
+  },
+  "files": [
+    "bin/",
+    "npm/",
+    "helmcode/",
+    "!helmcode/**/__pycache__/**",
+    "!helmcode/**/*.pyc",
+    "configs/",
+    "pyproject.toml",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node npm/postinstall.js",
+    "test": "python -m pytest -q"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

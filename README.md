@@ -16,6 +16,25 @@ Then run:
 helmcode doctor
 ```
 
+You can also install the CLI through npm. The npm package wraps the Python CLI
+and creates a local virtual environment during install when Python 3.11+ is
+available:
+
+```bash
+npm install -g .
+helmcode
+```
+
+For development without global install:
+
+```bash
+npm install
+npx helmcode --version
+```
+
+Set `HELMCODE_SKIP_PYTHON_INSTALL=1` to skip npm postinstall Python setup, or
+set `HELMCODE_PYTHON=/path/to/python` to force a specific interpreter.
+
 ## Configure A Provider
 
 Create or edit `~/.helmcode/config.yaml`:
