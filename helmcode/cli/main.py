@@ -32,6 +32,8 @@ def main(
 
 app.command("run")(run.run_task)
 app.command("plan")(plan.plan_task)
+app.command("chat")(chat.chat_cmd)
+app.command("code")(chat.chat_cmd)
 app.command("apply")(apply.apply_last_patch)
 app.command("diff")(diff.show_pending_diff)
 app.command("doctor")(doctor.doctor)

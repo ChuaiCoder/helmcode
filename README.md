@@ -51,8 +51,12 @@ $env:MAIN_POOL_API_KEY="..."
 
 ```bash
 helmcode
+helmcode chat
+helmcode code --mode run --routing quota
 helmcode run "help me add tests for the auth module"
 helmcode plan "explain this repository architecture"
+helmcode models recommend "help me add tests for the auth module"
+helmcode models status
 helmcode diff
 helmcode apply
 helmcode doctor
@@ -60,6 +64,27 @@ helmcode config
 helmcode models sync
 helmcode models list
 helmcode models select coding main_pool:some-coding-model
+```
+
+Running `helmcode`, `helmcode chat`, or `helmcode code` starts an interactive
+session. Bare text uses the current session mode, which defaults to `recommend`
+so you can inspect model routing without spending provider quota. Use slash
+commands to control the session:
+
+```text
+/recommend <task>             show model routing without calling a provider
+/plan <task>                  generate a plan
+/run <task>                   run plan, patch, review, apply confirmation, tests
+/mode recommend|plan|run      set what bare prompt text does
+/routing fixed|quota|recommend set model routing for the session
+/model <provider:model|clear> force or clear a model override
+/models                       show configured roles and profiles
+/quota                        show local quota estimates
+/status                       show workspace and routing status
+/diff                         show pending patch
+/apply                        apply pending patch
+/doctor                       run local diagnostics
+/exit                         leave the session
 ```
 
 `helmcode run` performs the main Agent workflow: generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Use `--yes` for non-interactive approval of the plan and patch confirmations.
