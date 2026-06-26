@@ -73,6 +73,7 @@ class AgentProfileConfig(BaseModel):
     role: str
     task_type: str
     model_role: str
+    model_id: str | None = None
     purpose: str
     order: int = 100
     required: bool = True

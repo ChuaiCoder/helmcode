@@ -665,6 +665,108 @@ def test_configured_agent_profile_replaces_builtin(tmp_path: Path) -> None:
     assert planner.purpose == "custom planning policy"
 
 
+def test_configured_agent_profile_model_id_routes_matching_agent(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:budget-coder",
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+    config.agent_profiles = [
+        AgentProfileConfig(
+            id="coder",
+            role="coding",
+            task_type="code_patch",
+            model_role="coding",
+            model_id="main:budget-coder",
+            purpose="use a configured budget coding lane",
+            order=40,
+            required=True,
+        )
+    ]
+
+    allocation = _allocator(config, tmp_path).allocate("add a small helper")
+
+    coder = next(assignment for assignment in allocation.assignments if assignment.agent_id == "coder")
+    assert coder.model_id == "main:budget-coder"
+    assert coder.model_cost_tier == "low"
+    assert coder.reason == "configured model for agent coder"
+
+
+def test_scoped_model_override_wins_over_configured_agent_model_id(tmp_path: Path) -> None:
+    config = _config()
+    config.agent_profiles = [
+        AgentProfileConfig(
+            id="coder",
+            role="coding",
+            task_type="code_patch",
+            model_role="coding",
+            model_id="main:budget-coder",
+            purpose="use a configured budget coding lane",
+            order=40,
+            required=True,
+        )
+    ]
+
+    allocation = _allocator(config, tmp_path).allocate(
+        "add a small helper",
+        model_overrides={"coder": "main:cli-coder"},
+    )
+
+    coder = next(assignment for assignment in allocation.assignments if assignment.agent_id == "coder")
+    assert coder.model_id == "main:cli-coder"
+    assert coder.reason == "explicit model override for coder"
+
+
+def test_runtime_uses_configured_agent_model_id_for_real_selection(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:budget-coder",
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+    config.agent_profiles = [
+        AgentProfileConfig(
+            id="coder",
+            role="coding",
+            task_type="code_patch",
+            model_role="coding",
+            model_id="main:budget-coder",
+            purpose="use a configured budget coding lane",
+            order=40,
+            required=True,
+        )
+    ]
+    selector = QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl"))
+    runtime = AgentRuntime(workspace=Workspace.discover(tmp_path), selector=selector)
+    task = "add a small helper"
+    session = AgentSession(
+        session_id="test-session",
+        workspace_path=tmp_path,
+        user_task=task,
+        created_at=datetime.now(UTC),
+    )
+
+    allocation = runtime.allocate_task(session=session, task=task)
+    selection = runtime.select_model(
+        session=session,
+        role="coding",
+        task_type="code_patch",
+        task=task,
+        fallback_model_id="main:coder",
+        agent_id="coder",
+    )
+
+    coder = next(assignment for assignment in allocation.assignments if assignment.agent_id == "coder")
+    assert coder.model_id == "main:budget-coder"
+    assert selection.model_id == "main:budget-coder"
+    assert selection.reason == "configured model for agent coder"
+
+
 def test_configured_agent_trigger_adds_real_assignment(tmp_path: Path) -> None:
     config = _config()
     config.agent_profiles = [

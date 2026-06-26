@@ -56,6 +56,7 @@ class AgentProfile:
     role: str
     task_type: str
     model_role: str
+    model_id: str | None
     purpose: str
     order: int
     required: bool = True
@@ -197,6 +198,7 @@ DEFAULT_AGENT_PROFILES = [
         role="fast",
         task_type=TASK_REPO_SCAN,
         model_role=MODEL_ROLE_FAST,
+        model_id=None,
         purpose="cheap repository discovery before spending coding quota",
         order=10,
         required=False,
@@ -207,6 +209,7 @@ DEFAULT_AGENT_PROFILES = [
         role="fast",
         task_type=TASK_SUMMARIZE,
         model_role=MODEL_ROLE_FAST,
+        model_id=None,
         purpose="compress long task context before expensive calls",
         order=20,
         required=False,
@@ -217,6 +220,7 @@ DEFAULT_AGENT_PROFILES = [
         role="planning",
         task_type=TASK_PLAN,
         model_role=MODEL_ROLE_PLANNING,
+        model_id=None,
         purpose="reason about implementation sequence and verification",
         order=30,
         required=True,
@@ -227,6 +231,7 @@ DEFAULT_AGENT_PROFILES = [
         role="coding",
         task_type=TASK_CODE_PATCH,
         model_role=MODEL_ROLE_CODING,
+        model_id=None,
         purpose="produce the code patch",
         order=40,
         required=True,
@@ -237,6 +242,7 @@ DEFAULT_AGENT_PROFILES = [
         role="review",
         task_type=TASK_REVIEW,
         model_role=MODEL_ROLE_REVIEW,
+        model_id=None,
         purpose="independent patch review with a different model when available",
         order=50,
         required=False,
@@ -247,6 +253,7 @@ DEFAULT_AGENT_PROFILES = [
         role="coding",
         task_type=TASK_REPAIR,
         model_role=MODEL_ROLE_CODING,
+        model_id=None,
         purpose="repair failed tests without re-running the full planning path",
         order=60,
         required=False,
@@ -311,11 +318,13 @@ class CodingPlanTaskAllocator:
                 fallback_model_id = self._fallback_model(agent)
                 scoped_override_model_id = (
                     override_model_id or _model_override_for_agent(agent, model_overrides)
+                    or agent.model_id
                 )
                 override_reason = (
                     "explicit --model override"
                     if override_model_id
                     else _model_override_reason(agent, model_overrides)
+                    or (f"configured model for agent {agent.id}" if agent.model_id else None)
                 )
                 while True:
                     try:
@@ -793,6 +802,7 @@ def _merge_agent_profiles(configured: list[AgentProfileConfig]) -> list[AgentPro
             role=item.role,
             task_type=item.task_type,
             model_role=item.model_role,
+            model_id=item.model_id,
             purpose=item.purpose,
             order=item.order,
             required=item.required,

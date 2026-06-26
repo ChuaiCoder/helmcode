@@ -243,6 +243,17 @@ class AgentRuntime:
             model_id = self.model_overrides.get(key.lower())
             if model_id:
                 return model_id, f"explicit model override for {key.lower()}"
+        for profile in self.selector.config.agent_profiles if self.selector is not None else []:
+            if not profile.model_id:
+                continue
+            if agent_id and profile.id.lower() == agent_id.lower():
+                return profile.model_id, f"configured model for agent {profile.id}"
+            if not agent_id and role.lower() in {
+                profile.role.lower(),
+                profile.model_role.lower(),
+                profile.task_type.lower(),
+            }:
+                return profile.model_id, f"configured model for agent {profile.id}"
         return None, None
 
 

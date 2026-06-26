@@ -498,6 +498,23 @@ keep cheap scout/planner calls while spending a stronger coding model only for
 the patch phase. Interactive sessions expose the same control through
 `/role-model`.
 
+For persistent Reasonix-style subagent routing, set `model_id` on an
+`agent_profiles` entry. This pins that agent to a concrete provider-qualified
+model in both allocation previews and runtime provider calls, while still
+allowing one-shot `--model` and `--role-model` overrides to take precedence:
+
+```yaml
+agent_profiles:
+  - id: coder
+    role: coding
+    task_type: code_patch
+    model_role: coding
+    model_id: main_pool:your-budget-coding-model
+    purpose: use the budget coding lane for normal patches
+    order: 40
+    required: true
+```
+
 The allocation contract includes `model_cost_tier` on every assignment and a
 structured `cost_breakdown` comparing the selected multi-agent path with a
 baseline that would run every phase on the configured coding model. The
