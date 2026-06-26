@@ -42,6 +42,8 @@ app.command("doctor")(doctor.doctor)
 app.command("config")(config.config_cmd)
 app.command("events")(sessions.events_command)
 app.command("stats")(sessions.stats_command)
+app.command("replay")(sessions.replay_command)
+app.command("prune-sessions")(sessions.prune_command)
 app.command("setup")(setup.setup_cmd)
 
 

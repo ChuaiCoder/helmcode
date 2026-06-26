@@ -102,6 +102,9 @@ helmcode agents plan --json "refactor the routing layer and add tests"
 helmcode sessions
 helmcode events
 helmcode stats
+helmcode replay <session-id>
+helmcode sessions diff <left-session-id> <right-session-id>
+helmcode prune-sessions --keep 20
 helmcode diff
 helmcode apply
 helmcode doctor
@@ -128,6 +131,9 @@ commands to control the session:
 /quota                        show local quota estimates
 /sessions                     show recent local sessions
 /events [session]             show recent audit events
+/replay <session>             replay one session timeline
+/session-diff <a> <b>         compare two sessions
+/prune-sessions               delete old session records after confirmation
 /stats                        show aggregate session stats
 /status                       show workspace and routing status
 /diff                         show pending patch
@@ -193,6 +199,9 @@ helmcode sessions
 helmcode sessions --json
 helmcode sessions events <session-id>
 helmcode events --limit 20
+helmcode replay <session-id>
+helmcode sessions diff <left-session-id> <right-session-id>
+helmcode prune-sessions --keep 20 --older-than-days 30
 helmcode stats
 helmcode stats --json
 ```

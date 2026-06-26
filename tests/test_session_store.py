@@ -39,3 +39,17 @@ def test_session_store_lists_recent_events_and_stats(tmp_path: Path) -> None:
     assert stats.patch_applied_count == 1
     assert stats.command_result_count == 1
     assert stats.event_counts["user_message"] == 1
+
+
+def test_session_store_deletes_and_prunes_sessions(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, enable_structured_logging=False)
+    store.record("session-a", "user_message", {"content": "first"})
+    store.record("session-b", "user_message", {"content": "second"})
+    store.record("session-c", "user_message", {"content": "third"})
+
+    pruned = store.prune_sessions(keep=1)
+
+    assert [session.session_id for session in pruned] == ["session-b", "session-a"]
+    assert [session.session_id for session in store.list_sessions(limit=10)] == ["session-c"]
+    assert store.delete_session("session-c") == 1
+    assert store.list_sessions(limit=10) == []

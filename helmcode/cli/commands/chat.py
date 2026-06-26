@@ -110,6 +110,23 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/events":
         sessions.events_command(session_id=rest or None, workspace=state.workspace_path)
         return True
+    if command == "/replay":
+        _require_task(rest, "/replay")
+        sessions.replay_command(session_id=rest, workspace=state.workspace_path)
+        return True
+    if command == "/session-diff":
+        parts = rest.split()
+        if len(parts) != 2:
+            raise ValueError("/session-diff requires two session ids")
+        sessions.diff_command(
+            left_session_id=parts[0],
+            right_session_id=parts[1],
+            workspace=state.workspace_path,
+        )
+        return True
+    if command == "/prune-sessions":
+        sessions.prune_command(workspace=state.workspace_path)
+        return True
     if command == "/stats":
         sessions.stats_command(workspace=state.workspace_path)
         return True
@@ -268,6 +285,9 @@ def _print_help(compact: bool) -> None:
         ("/quota", "Show local quota estimates."),
         ("/sessions", "Show recent local sessions."),
         ("/events [session]", "Show recent audit events."),
+        ("/replay <session>", "Replay one session timeline."),
+        ("/session-diff <a> <b>", "Compare two sessions."),
+        ("/prune-sessions", "Delete old session records after confirmation."),
         ("/stats", "Show aggregate session stats."),
         ("/status", "Show workspace, mode, routing, and quota."),
         ("/diff", "Show pending patch."),

@@ -4,7 +4,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -129,7 +129,7 @@ class SessionStore:
             SessionEvent(
                 session_id=row[0],
                 event_type=row[1],
-                payload=json.loads(row[2]),
+                payload=_load_payload(row[2]),
                 created_at=datetime.fromisoformat(row[3]),
             )
             for row in rows
@@ -173,6 +173,42 @@ class SessionStore:
             )
             for row in rows
         ]
+
+    def get_session(self, session_id: str) -> SessionSummary | None:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT session_id, MIN(created_at), MAX(created_at), COUNT(*)
+                FROM events
+                WHERE session_id = ?
+                GROUP BY session_id
+                """,
+                (session_id,),
+            ).fetchone()
+            task_row = conn.execute(
+                """
+                SELECT payload
+                FROM events
+                WHERE session_id = ? AND event_type = 'user_message'
+                ORDER BY id
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        task = None
+        if task_row is not None:
+            payload = _load_payload(task_row[0])
+            content = payload.get("content")
+            task = content if isinstance(content, str) else None
+        return SessionSummary(
+            session_id=row[0],
+            started_at=datetime.fromisoformat(row[1]),
+            updated_at=datetime.fromisoformat(row[2]),
+            event_count=int(row[3]),
+            task=task,
+        )
 
     def list_recent_events(
         self,
@@ -236,6 +272,35 @@ class SessionStore:
             first_event_at=first_event_at,
             last_event_at=last_event_at,
         )
+
+    def delete_session(self, session_id: str) -> int:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("DELETE FROM events WHERE session_id = ?", (session_id,))
+            return int(cursor.rowcount or 0)
+
+    def prune_sessions(
+        self,
+        *,
+        keep: int = 20,
+        older_than_days: int | None = None,
+    ) -> list[SessionSummary]:
+        summaries = self.list_sessions(limit=1_000_000)
+        keep_ids = {summary.session_id for summary in summaries[:keep]} if keep > 0 else set()
+        cutoff = (
+            datetime.now(UTC) - timedelta(days=older_than_days)
+            if older_than_days is not None
+            else None
+        )
+        pruned: list[SessionSummary] = []
+        for summary in summaries:
+            if summary.session_id in keep_ids:
+                continue
+            if cutoff is not None and summary.updated_at >= cutoff:
+                continue
+            deleted = self.delete_session(summary.session_id)
+            if deleted:
+                pruned.append(summary)
+        return pruned
 
     def _write_json_log(
         self,

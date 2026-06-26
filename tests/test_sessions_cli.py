@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from helmcode.cli.main import app as main_app
 from helmcode.cli.commands import sessions
 from helmcode.memory.session_store import SessionStore
 
@@ -57,3 +58,79 @@ def test_sessions_stats_json_reports_aggregate_counts(tmp_path: Path) -> None:
     assert payload["event_count"] == 2
     assert payload["model_call_count"] == 1
     assert payload["command_result_count"] == 1
+
+
+def test_sessions_replay_json_outputs_ordered_events(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, enable_structured_logging=False)
+    store.record("session-a", "user_message", {"content": "add tests"})
+    store.record("session-a", "model_called", {"model_id": "main:planner"})
+
+    result = CliRunner().invoke(
+        sessions.app,
+        ["replay", "session-a", "--workspace", str(tmp_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [event["event_type"] for event in payload] == ["user_message", "model_called"]
+
+
+def test_sessions_diff_json_compares_two_sessions(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, enable_structured_logging=False)
+    store.record("session-a", "user_message", {"content": "add tests"})
+    store.record("session-a", "model_called", {"model_id": "main:planner"})
+    store.record("session-b", "user_message", {"content": "add tests and patch"})
+    store.record("session-b", "model_called", {"model_id": "main:planner"})
+    store.record("session-b", "model_called", {"model_id": "main:coder"})
+    store.record("session-b", "patch_created", {"files": ["app.py"]})
+
+    result = CliRunner().invoke(
+        sessions.app,
+        ["diff", "session-a", "session-b", "--workspace", str(tmp_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["event_count_delta"] == 2
+    assert payload["event_type_delta"]["patch_created"] == 1
+    assert payload["model_calls_added"] == ["main:coder"]
+    assert payload["patch_files_added"] == ["app.py"]
+
+
+def test_sessions_prune_json_deletes_old_sessions(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, enable_structured_logging=False)
+    store.record("session-a", "user_message", {"content": "first"})
+    store.record("session-b", "user_message", {"content": "second"})
+
+    result = CliRunner().invoke(
+        sessions.app,
+        ["prune", "--workspace", str(tmp_path), "--keep", "1", "--yes", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [session["session_id"] for session in payload] == ["session-a"]
+    assert [session.session_id for session in store.list_sessions(limit=10)] == ["session-b"]
+
+
+def test_top_level_replay_alias_works(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, enable_structured_logging=False)
+    store.record("session-a", "user_message", {"content": "add tests"})
+
+    result = CliRunner().invoke(
+        main_app,
+        ["replay", "session-a", "--workspace", str(tmp_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)[0]["session_id"] == "session-a"
+
+
+def test_replay_unknown_session_fails(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        sessions.app,
+        ["replay", "missing-session", "--workspace", str(tmp_path), "--json"],
+    )
+
+    assert result.exit_code == 1
+    assert "No events found" in result.output
