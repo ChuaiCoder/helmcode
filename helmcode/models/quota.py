@@ -376,7 +376,11 @@ class QuotaAwareSelector:
                 quota_status=status,
             )
 
-        candidates = self._candidate_models(role, task_type, fallback_model_id)
+        quota_state = QuotaState(
+            self.config.quota_policies,
+            [*self.ledger.load(), *(reserved_records or [])],
+        )
+        candidates = self._candidate_models(role, task_type, fallback_model_id, quota_state=quota_state)
         if prefer_different_from:
             different = [model_id for model_id in candidates if model_id != prefer_different_from]
             if different:
@@ -391,10 +395,6 @@ class QuotaAwareSelector:
                 routing_mode="fixed",
             )
 
-        quota_state = QuotaState(
-            self.config.quota_policies,
-            [*self.ledger.load(), *(reserved_records or [])],
-        )
         exhausted: list[ModelQuotaStatus] = []
         for model_id in candidates:
             status = quota_state.status_for_model(model_id)
@@ -463,6 +463,8 @@ class QuotaAwareSelector:
         role: str,
         task_type: str,
         fallback_model_id: str | None,
+        *,
+        quota_state: QuotaState,
     ) -> list[str]:
         preferred = [
             profile
@@ -470,7 +472,7 @@ class QuotaAwareSelector:
             if task_type in profile.preferred_for
         ]
         preferred = self._apply_model_preset(preferred)
-        preferred.sort(key=self._profile_sort_key)
+        preferred.sort(key=lambda profile: self._profile_sort_key(profile, quota_state))
         candidates = [profile.id for profile in preferred]
         role_model = fallback_model_id or self.config.model_roles.get(role)
         if role_model:
@@ -486,11 +488,15 @@ class QuotaAwareSelector:
         cheaper_profiles = [profile for profile in profiles if profile.cost_tier != "high"]
         return cheaper_profiles or profiles
 
-    def _profile_sort_key(self, profile: ModelProfileConfig) -> tuple[int, str]:
+    def _profile_sort_key(
+        self,
+        profile: ModelProfileConfig,
+        quota_state: QuotaState,
+    ) -> tuple[int, tuple[int, int], str]:
         cost = COST_ORDER.get(profile.cost_tier, COST_ORDER["medium"])
         if self.model_preset == MODEL_PRESET_PRO:
             cost = -cost
-        return cost, profile.id
+        return cost, _quota_pressure_sort_key(quota_state.status_for_model(profile.id)), profile.id
 
 
 def classify_task(task: str) -> str:
@@ -654,6 +660,15 @@ def _record_matches(
     if role is not None and record.role != role:
         return False
     return True
+
+
+def _quota_pressure_sort_key(status: ModelQuotaStatus) -> tuple[int, int]:
+    if not status.available:
+        return 1, 0
+    remaining = status.tightest_remaining
+    if remaining is None:
+        return 0, -1_000_000_000
+    return 0, -remaining
 
 
 def _restore_summary(statuses: list[ModelQuotaStatus]) -> str:

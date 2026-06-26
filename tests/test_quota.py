@@ -216,6 +216,44 @@ def test_quota_selection_uses_next_lowest_cost_profile_when_cheapest_is_exhauste
     assert selection.model_id == "main:mid-code"
 
 
+def test_quota_selection_prefers_less_constrained_equal_cost_profile(tmp_path: Path) -> None:
+    policies = [
+        QuotaPolicyConfig(
+            id="almost_full",
+            model_patterns=["main:a-low"],
+            windows=[QuotaWindowConfig(name="daily", type="calendar_day", limit=10)],
+        ),
+        QuotaPolicyConfig(
+            id="wide_open",
+            model_patterns=["main:z-low"],
+            windows=[QuotaWindowConfig(name="daily", type="calendar_day", limit=10)],
+        ),
+    ]
+    config = _config(
+        roles={"default": "main:fast", "coding": "main:strong"},
+        profiles=[
+            ModelProfileConfig(id="main:a-low", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+            ModelProfileConfig(id="main:z-low", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+        ],
+        policies=policies,
+    )
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    for _ in range(9):
+        ledger.record(model_id="main:a-low", role="coding", task_type=TASK_CODE_PATCH)
+    selector = QuotaAwareSelector(config, ledger, routing_mode="quota")
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+
+    assert selection.model_id == "main:z-low"
+    assert selection.quota_status is not None
+    assert selection.quota_status.tightest_remaining == 10
+
+
 def test_fixed_selection_records_configured_quota_unit(tmp_path: Path) -> None:
     policy = QuotaPolicyConfig(
         id="prompt_calls",

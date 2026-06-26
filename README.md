@@ -469,12 +469,15 @@ task. Use `--json` on `helmcode agents plan` or `helmcode models recommend` when
 another tool needs to consume the allocation directly.
 
 In quota routing, the selector first considers profiled models that explicitly
-list the agent task type in `preferred_for`, ordered by `cost_tier` and model id.
-The configured role model and default model remain fallbacks, so unprofiled
-legacy configs still work and `--routing fixed` continues to use the role
-mapping directly. This is the main Coding Plan quota-saving behavior: cheap
-models can handle scan, summarize, planning, or simple coding phases before the
-configured expensive coding model is spent.
+list the agent task type in `preferred_for`, ordered by `cost_tier`, local quota
+pressure, and model id. When two profiled models have the same cost tier,
+helmcode prefers the one with more remaining local quota, so a nearly exhausted
+cheap lane is preserved when an equally cheap lane is still wide open. The
+configured role model and default model remain fallbacks, so unprofiled legacy
+configs still work and `--routing fixed` continues to use the role mapping
+directly. This is the main Coding Plan quota-saving behavior: cheap models can
+handle scan, summarize, planning, or simple coding phases before the configured
+expensive coding model is spent.
 
 Use `--preset auto|economy|balanced|pro` to switch the model package for a
 single command without editing config. `balanced` is the default quota-saving
