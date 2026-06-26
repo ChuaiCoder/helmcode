@@ -13,6 +13,7 @@ python -m pip install -e ".[dev]"
 Then run:
 
 ```bash
+helmcode setup
 helmcode doctor
 ```
 
@@ -22,6 +23,7 @@ available:
 
 ```bash
 npm install -g .
+helmcode setup
 helmcode
 ```
 
@@ -66,12 +68,31 @@ PowerShell:
 $env:MAIN_POOL_API_KEY="..."
 ```
 
+You can generate this file from the CLI instead of editing YAML by hand:
+
+```bash
+helmcode setup \
+  --provider-id main_pool \
+  --base-url https://your-provider.example/v1 \
+  --api-key-env MAIN_POOL_API_KEY \
+  --model your-default-model \
+  --fast-model your-fast-model \
+  --planning-model your-planning-model \
+  --coding-model your-coding-model \
+  --review-model your-review-model \
+  --coding-daily-limit 10
+```
+
+`setup` also writes model profiles, so Coding Plan allocation can distinguish
+cheap scan/summarize calls from expensive coding calls.
+
 ## Common Commands
 
 ```bash
 helmcode
 helmcode chat
 helmcode code --mode run --routing quota
+helmcode setup
 helmcode run "help me add tests for the auth module"
 helmcode plan "explain this repository architecture"
 helmcode models recommend "help me add tests for the auth module"

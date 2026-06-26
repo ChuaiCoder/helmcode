@@ -125,6 +125,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/config":
         config_command.config_cmd(show=True, init=False)
         return True
+    if command == "/setup":
+        console.print("Run `helmcode setup` outside the interactive session to configure providers and quotas.")
+        return True
     if command == "/diff":
         diff.show_pending_diff(workspace=state.workspace_path)
         return True
@@ -270,6 +273,7 @@ def _print_help(compact: bool) -> None:
         ("/diff", "Show pending patch."),
         ("/apply", "Apply pending patch."),
         ("/doctor", "Run local diagnostics."),
+        ("/setup", "Show setup command hint."),
         ("/yes on|off", "Toggle auto-confirm for safe confirmations."),
         ("/tests on|off", "Toggle tests for /run."),
         ("/exit", "Leave the session."),
