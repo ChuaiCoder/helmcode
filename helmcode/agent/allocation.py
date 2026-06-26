@@ -217,49 +217,65 @@ class CodingPlanTaskAllocator:
         triggered_agent_ids = self._triggered_agent_ids(task)
         agent_ids = self._merge_triggered_agent_ids(agent_ids, triggered_agent_ids)
         assignments: list[AgentAssignment] = []
+        reservations: list[ModelCallRecord] = []
         warnings: list[str] = []
         coding_model: str | None = None
-        reserved_records: list[ModelCallRecord] = []
 
-        for agent in self._ordered_agents(agent_ids):
+        for agent in self._ordered_agents(agent_ids, detected_task_type=detected_task_type):
             fallback_model_id = self._fallback_model(agent)
-            try:
-                selection = self.selector.select(
-                    role=agent.role,
-                    task_type=agent.task_type,
-                    task=task,
-                    fallback_model_id=fallback_model_id,
-                    override_model_id=override_model_id,
-                    prefer_different_from=coding_model if agent.id == "reviewer" else None,
-                    reserved_records=reserved_records,
-                )
-            except ModelError as exc:
-                if agent.required:
-                    warnings.append(f"blocked:{agent.id}:{exc}")
-                else:
-                    warnings.append(f"skipped:{agent.id}:{exc}")
-                continue
-            if selection.quota_status is not None and not selection.quota_status.available:
-                message = self._quota_unavailable_message(selection)
-                if agent.required:
-                    warnings.append(f"blocked:{agent.id}:{message}")
-                else:
-                    warnings.append(f"skipped:{agent.id}:{message}")
-                continue
-            if override_model_id is None and not self._model_can_handle(selection.model_id, agent, fallback_model_id):
-                message = (
-                    f"{selection.model_id} is not profiled for {agent.task_type}; "
-                    f"refusing unsafe fallback for {agent.id}"
-                )
-                if agent.required:
-                    warnings.append(f"blocked:{agent.id}:{message}")
-                else:
-                    warnings.append(f"skipped:{agent.id}:{message}")
-                continue
-            if agent.id == "coder":
-                coding_model = selection.model_id
-            assignments.append(self._assignment(agent, selection))
-            reserved_records.append(self._reservation_for(agent, selection))
+            while True:
+                try:
+                    selection = self.selector.select(
+                        role=agent.role,
+                        task_type=agent.task_type,
+                        task=task,
+                        fallback_model_id=fallback_model_id,
+                        override_model_id=override_model_id,
+                        prefer_different_from=coding_model if agent.id == "reviewer" else None,
+                        reserved_records=reservations,
+                    )
+                except ModelError as exc:
+                    message = str(exc)
+                    if (
+                        agent.required
+                        and _looks_like_capacity_issue(message)
+                        and self._release_optional_reservation(assignments, reservations, warnings, agent, message)
+                    ):
+                        continue
+                    if agent.required:
+                        warnings.append(f"blocked:{agent.id}:{exc}")
+                    else:
+                        warnings.append(f"skipped:{agent.id}:{exc}")
+                    break
+                if selection.quota_status is not None and not selection.quota_status.available:
+                    message = self._quota_unavailable_message(selection)
+                    if (
+                        agent.required
+                        and _looks_like_capacity_issue(message)
+                        and self._release_optional_reservation(assignments, reservations, warnings, agent, message)
+                    ):
+                        continue
+                    if agent.required:
+                        warnings.append(f"blocked:{agent.id}:{message}")
+                    else:
+                        warnings.append(f"skipped:{agent.id}:{message}")
+                    break
+                if override_model_id is None and not self._model_can_handle(selection.model_id, agent, fallback_model_id):
+                    message = (
+                        f"{selection.model_id} is not profiled for {agent.task_type}; "
+                        f"refusing unsafe fallback for {agent.id}"
+                    )
+                    if agent.required:
+                        warnings.append(f"blocked:{agent.id}:{message}")
+                    else:
+                        warnings.append(f"skipped:{agent.id}:{message}")
+                    break
+                if agent.id == "coder":
+                    coding_model = selection.model_id
+                assignment = self._assignment(agent, selection)
+                assignments.append(assignment)
+                reservations.append(self._reservation_for(agent, selection))
+                break
 
         baseline_cost = self._baseline_cost(agent_ids)
         assignments = self._apply_budget_cap(assignments, warnings, max_cost_score)
@@ -307,8 +323,11 @@ class CodingPlanTaskAllocator:
             agents.append("fixer")
         return _dedupe(agents)
 
-    def _ordered_agents(self, agent_ids: list[str]) -> list[AgentProfile]:
+    def _ordered_agents(self, agent_ids: list[str], *, detected_task_type: str) -> list[AgentProfile]:
         selected = [profile for profile in self.agent_profiles if profile.id in agent_ids]
+        if detected_task_type == TASK_REPAIR:
+            order_by_id = {agent_id: index for index, agent_id in enumerate(agent_ids)}
+            return sorted(selected, key=lambda profile: (order_by_id.get(profile.id, len(agent_ids)), profile.id))
         return sorted(selected, key=lambda profile: (profile.order, profile.id))
 
     def _triggered_agent_ids(self, task: str) -> list[str]:
@@ -396,6 +415,27 @@ class CodingPlanTaskAllocator:
             )
         return kept
 
+    def _release_optional_reservation(
+        self,
+        assignments: list[AgentAssignment],
+        reservations: list[ModelCallRecord],
+        warnings: list[str],
+        required_agent: AgentProfile,
+        reason: str,
+    ) -> bool:
+        for index in range(len(assignments) - 1, -1, -1):
+            assignment = assignments[index]
+            if assignment.required:
+                continue
+            assignments.pop(index)
+            reservations.pop(index)
+            warnings.append(
+                f"skipped:{assignment.agent_id}:released optional reservation for required "
+                f"{required_agent.id}: {reason}"
+            )
+            return True
+        return False
+
     def _reservation_for(self, agent: AgentProfile, selection: ModelSelection) -> ModelCallRecord:
         unit = selection.quota_status.unit if selection.quota_status else "request"
         return ModelCallRecord(
@@ -434,6 +474,14 @@ class CodingPlanTaskAllocator:
     def _strategy(self, task_type: str, complexity: str) -> str:
         if task_type in {TASK_REPO_SCAN, TASK_SUMMARIZE, TASK_REVIEW}:
             return f"single-agent {TASK_TYPE_LABELS.get(task_type, task_type)}"
+        if task_type == TASK_PLAN:
+            if complexity == COMPLEXITY_LOW:
+                return "single-agent planning"
+            return "scout-planning path with cheap repository discovery"
+        if task_type == TASK_REPAIR:
+            if complexity == COMPLEXITY_LOW:
+                return "single-agent repair"
+            return "scout-repair-review path"
         if complexity == COMPLEXITY_LOW:
             return "quota-saving direct path"
         if complexity == COMPLEXITY_MEDIUM:
@@ -527,3 +575,8 @@ def _remaining_after_reservation(remaining: int | None) -> int | None:
     if remaining is None:
         return None
     return max(remaining - 1, 0)
+
+
+def _looks_like_capacity_issue(message: str) -> bool:
+    lowered = message.lower()
+    return "quota" in lowered or "capacity" in lowered

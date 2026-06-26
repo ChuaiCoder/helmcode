@@ -249,12 +249,14 @@ consume the allocation directly.
 
 Allocation simulates quota reservations inside the proposed multi-agent plan
 without writing to the quota ledger. If two agents would use the same model and
-only one local request remains, the later optional agent is skipped or the later
-required agent blocks the plan before any provider call is made. Assignment JSON
-and the table output include projected remaining quota after each allocated
-call. Pass `--max-cost-score` to `helmcode agents plan` to preview whether a
-task would fit a budget after optional-agent downgrades, without calling a
-provider.
+only one local request remains, optional agents are skipped first; if an earlier
+optional reservation would block a later required planner or coder, helmcode
+releases that optional reservation and keeps the required path runnable. A
+required agent blocks the plan before any provider call only when no optional
+reservation can be released. Assignment JSON and the table output include
+projected remaining quota after each allocated call. Pass `--max-cost-score` to
+`helmcode agents plan` to preview whether a task would fit a budget after
+optional-agent downgrades, without calling a provider.
 
 When allocation includes `scout` or `summarizer`, `helmcode plan` and
 `helmcode run` execute those pre-plan agents with the selected fast model before

@@ -106,6 +106,20 @@ def test_simple_coding_task_uses_direct_path(tmp_path: Path) -> None:
     assert allocation.strategy == "quota-saving direct path"
 
 
+def test_plan_task_strategy_matches_plan_only_agents(tmp_path: Path) -> None:
+    allocation = _allocator(_config(), tmp_path).allocate("plan repository architecture")
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == ["scout", "planner"]
+    assert allocation.strategy == "scout-planning path with cheap repository discovery"
+
+
+def test_repair_task_strategy_matches_repair_agents(tmp_path: Path) -> None:
+    allocation = _allocator(_config(), tmp_path).allocate("fix failing tests around architecture")
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == ["scout", "fixer", "reviewer"]
+    assert allocation.strategy == "scout-repair-review path"
+
+
 def test_optional_reviewer_is_skipped_when_quota_is_exhausted(tmp_path: Path) -> None:
     config = _config()
     config.quota_policies = [
@@ -197,6 +211,40 @@ def test_allocation_reserves_required_agent_quota_and_blocks_overbooking(tmp_pat
     assert [assignment.agent_id for assignment in allocation.assignments] == ["planner"]
     assert any(warning.startswith("blocked:coder:") for warning in allocation.warnings)
     assert allocation.blocked is True
+    assert ledger.load() == []
+
+
+def test_optional_reservation_is_released_for_required_agent_quota(tmp_path: Path) -> None:
+    config = _config()
+    shared_model = "main:shared"
+    config.model_roles["default"] = shared_model
+    config.model_roles["fast"] = shared_model
+    config.model_roles["planning"] = shared_model
+    config.model_profiles = [
+        ModelProfileConfig(
+            id=shared_model,
+            preferred_for=["repo_scan", "plan"],
+            cost_tier="medium",
+        )
+    ]
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="shared_once",
+            model_patterns=[shared_model],
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+        )
+    ]
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    allocator = CodingPlanTaskAllocator(config, QuotaAwareSelector(config, ledger))
+
+    allocation = allocator.allocate("plan repository architecture")
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == ["planner"]
+    assert any(
+        warning.startswith("skipped:scout:released optional reservation for required planner")
+        for warning in allocation.warnings
+    )
+    assert allocation.blocked is False
     assert ledger.load() == []
 
 
