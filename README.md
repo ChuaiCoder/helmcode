@@ -2,7 +2,7 @@
 
 `helmcode` is a CLI-first local codebase Agent. It runs from a project directory, builds repo context through tools, plans before editing, writes changes as unified diffs, asks for confirmation before risky actions, and records observable local session events.
 
-It is not a model routing product. Model discovery and role selection exist as lower-level plumbing; the main experience is helping with development tasks inside a local repository.
+Its main experience is still local repository development, but model routing is a first-class runtime concern: Coding Plan allocation splits work across specialized agents and uses quota-aware model selection before spending provider calls.
 
 ## Install
 
@@ -166,7 +166,9 @@ commands to control the session:
 /exit                         leave the session
 ```
 
-`helmcode run` performs the main Agent workflow: generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Use `--yes` for non-interactive approval of the plan and patch confirmations.
+`helmcode run` performs the main Agent workflow: record a Coding Plan allocation, generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Required allocation agents are checked before provider calls; if a required coding or planning agent has no quota capacity, the run is blocked before spending another model request. Use `--yes` for non-interactive approval of the plan and patch confirmations.
+
+`helmcode plan` also records the Coding Plan allocation for observability, but it does not block on exhausted downstream coding quota. That keeps planning useful when you want to inspect the intended path before deciding whether to free quota, switch models, or wait for reset.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to
@@ -224,10 +226,12 @@ helmcode mcp export --format claude
 `helmcode agents plan` is a local Coding Plan allocation planner. It does not
 call a provider. It splits a task across built-in agents such as `scout`,
 `planner`, `coder`, `reviewer`, and `fixer`, then chooses models through the
-quota-aware selector. This is useful for checking which work will use cheap
-models and which work will spend coding-model quota before running the task.
-Use `--json` when another tool or a future runtime loop needs to consume the
-allocation directly.
+quota-aware selector. The same allocation contract is used by `helmcode plan`
+and `helmcode run`, so this command previews the runtime path rather than a
+separate placeholder design. Use it to check which work will use cheap models,
+which work will spend coding-model quota, and whether a required agent is
+blocked before running the task. Use `--json` when another tool needs to
+consume the allocation directly.
 
 Agent profiles can be extended in `~/.helmcode/config.yaml`. Triggered agents
 are included when their trigger text appears in the task. If a triggered agent
@@ -267,9 +271,10 @@ All file edits are represented as unified diffs. Pending patches are stored unde
 ## Sessions And Audit Events
 
 Every `plan` and `run` workflow records local session events under
-`.helmcode/sessions.sqlite3` and `.helmcode/audit_log.jsonl`. Use these
-commands to inspect what the agent selected, called, generated, applied, and
-verified:
+`.helmcode/sessions.sqlite3` and `.helmcode/audit_log.jsonl`, including
+`task_allocated` events before model calls and `model_selected` or
+`model_called` events as execution proceeds. Use these commands to inspect what
+the agent allocated, selected, called, generated, applied, and verified:
 
 ```bash
 helmcode sessions

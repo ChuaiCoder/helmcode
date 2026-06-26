@@ -225,6 +225,13 @@ class CodingPlanTaskAllocator:
                 else:
                     warnings.append(f"skipped:{agent.id}:{exc}")
                 continue
+            if selection.quota_status is not None and not selection.quota_status.available:
+                message = self._quota_unavailable_message(selection)
+                if agent.required:
+                    warnings.append(f"blocked:{agent.id}:{message}")
+                else:
+                    warnings.append(f"skipped:{agent.id}:{message}")
+                continue
             if override_model_id is None and not self._model_can_handle(selection.model_id, agent, fallback_model_id):
                 message = (
                     f"{selection.model_id} is not profiled for {agent.task_type}; "
@@ -352,6 +359,14 @@ class CodingPlanTaskAllocator:
         if profile is None:
             return False
         return agent.task_type in profile.preferred_for
+
+    def _quota_unavailable_message(self, selection: ModelSelection) -> str:
+        status = selection.quota_status
+        if status is None:
+            return f"{selection.model_id} has no quota capacity"
+        reset_text = status.next_restore_at.isoformat() if status.next_restore_at else "unknown reset time"
+        policy_text = status.policy_id or "unscoped quota policy"
+        return f"{selection.model_id} has no quota capacity under {policy_text}; resets at {reset_text}"
 
     def _strategy(self, task_type: str, complexity: str) -> str:
         if task_type in {TASK_REPO_SCAN, TASK_SUMMARIZE, TASK_REVIEW}:

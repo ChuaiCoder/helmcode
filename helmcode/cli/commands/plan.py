@@ -65,6 +65,8 @@ def plan_task(
         review_model_id=review_model_id,
         session_store=session_store,
         runtime=runtime,
+        block_on_allocation=False,
+        allocation_include_repair=False,
     )
     result = runner.plan(task)
     console.print(Panel(result.plan, title="Plan"))

@@ -67,6 +67,8 @@ class RunOrchestrator:
         session_store: SessionStore | None = None,
         runtime: AgentRuntime | None = None,
         max_repair_attempts: int = 3,
+        block_on_allocation: bool = True,
+        allocation_include_repair: bool = False,
     ) -> None:
         self.workspace = workspace
         self.provider = provider
@@ -81,6 +83,8 @@ class RunOrchestrator:
         self.session_store = session_store
         self.runtime = runtime
         self.max_repair_attempts = max_repair_attempts
+        self.block_on_allocation = block_on_allocation
+        self.allocation_include_repair = allocation_include_repair
 
     def run(self, task: str, confirmed: bool, run_tests: bool = True) -> RunResult:
         prepared = self.prepare(task)
@@ -111,6 +115,7 @@ class RunOrchestrator:
         state = AgentState.start(self.workspace.root_path, task)
         session = self._session_from_state(state, task)
         self._record(state.session_id, "user_message", {"content": task})
+        self._allocate_task(session, task)
         selection = self._select_model(
             session=session,
             role="planning",
@@ -370,3 +375,12 @@ class RunOrchestrator:
     def _record_model_call(self, session: AgentSession, selection: ModelSelection) -> None:
         if self.runtime is not None:
             self.runtime.record_model_call(session, selection)
+
+    def _allocate_task(self, session: AgentSession, task: str) -> None:
+        if self.runtime is not None:
+            self.runtime.allocate_task(
+                session=session,
+                task=task,
+                include_repair=self.allocation_include_repair,
+                block_on_required=self.block_on_allocation,
+            )

@@ -120,6 +120,26 @@ def test_required_agent_quota_exhaustion_blocks_allocation(tmp_path: Path) -> No
     assert allocation.blocked is True
 
 
+def test_fixed_routing_allocation_still_blocks_required_exhausted_quota(tmp_path: Path) -> None:
+    config = _config()
+    config.routing_mode = "fixed"
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="coder_only",
+            model_patterns=["main:coder"],
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+        )
+    ]
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    ledger.record(model_id="main:coder", role="coding", task_type="code_patch")
+    allocator = CodingPlanTaskAllocator(config, QuotaAwareSelector(config, ledger))
+
+    allocation = allocator.allocate("add a small helper")
+
+    assert any("main:coder has no quota capacity under coder_only" in warning for warning in allocation.warnings)
+    assert allocation.blocked is True
+
+
 def test_configured_agent_profile_replaces_builtin(tmp_path: Path) -> None:
     config = _config()
     config.agent_profiles = [

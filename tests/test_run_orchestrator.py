@@ -3,8 +3,8 @@ from pathlib import Path
 from helmcode.agent.runtime import AgentRuntime
 from helmcode.agent.runner import RunOrchestrator
 from helmcode.context.workspace import Workspace
-from helmcode.core.config import HelmcodeConfig
-from helmcode.core.exceptions import PermissionDenied
+from helmcode.core.config import HelmcodeConfig, QuotaPolicyConfig, QuotaWindowConfig
+from helmcode.core.exceptions import ModelError, PermissionDenied
 from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
 from helmcode.models.provider import ChatMessage, ModelResponse
 
@@ -412,6 +412,137 @@ def test_runner_runtime_records_model_calls_to_quota_ledger(tmp_path: Path) -> N
         ("planning", "fake:planning"),
         ("coding", "fake:coding"),
     ]
+
+
+def test_runner_records_coding_plan_allocation_event(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "fast": "fake:fast",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+            "review": "fake:review",
+        }
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl")),
+        session_store=store,
+    )
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider(patch),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+    )
+
+    runner.prepare("add a greeting helper")
+
+    allocation_events = [payload for _sid, event_type, payload in store.events if event_type == "task_allocated"]
+    assert allocation_events
+    assert allocation_events[0]["detected_task_type"] == "code_patch"
+    assert [assignment["agent_id"] for assignment in allocation_events[0]["assignments"]] == [
+        "planner",
+        "coder",
+    ]
+
+
+def test_runner_blocks_when_required_allocation_has_no_quota(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+        },
+        quota_policies=[
+            QuotaPolicyConfig(
+                id="coding_only",
+                model_patterns=["fake:coding"],
+                windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+            )
+        ],
+    )
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    ledger.record(model_id="fake:coding", role="coding", task_type="code_patch")
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, ledger),
+    )
+    provider = SequenceProvider("not called")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        block_on_allocation=True,
+    )
+
+    try:
+        runner.plan("add a greeting helper")
+    except ModelError as exc:
+        assert "Coding Plan allocation blocked" in str(exc)
+    else:
+        raise AssertionError("required allocation exhaustion should block run planning")
+    assert provider.calls == []
+
+
+def test_runner_plan_mode_can_record_blocked_allocation_without_blocking(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+        },
+        quota_policies=[
+            QuotaPolicyConfig(
+                id="coding_only",
+                model_patterns=["fake:coding"],
+                windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+            )
+        ],
+    )
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    ledger.record(model_id="fake:coding", role="coding", task_type="code_patch")
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, ledger),
+        session_store=store,
+    )
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider("not a patch"),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+        block_on_allocation=False,
+    )
+
+    result = runner.plan("add a greeting helper")
+
+    assert "Update hello.txt" in result.plan
+    allocation_events = [payload for _sid, event_type, payload in store.events if event_type == "task_allocated"]
+    assert allocation_events[0]["blocked"] is True
 
 
 def test_generate_patch_reviews_patch_when_review_model_is_configured(tmp_path: Path) -> None:

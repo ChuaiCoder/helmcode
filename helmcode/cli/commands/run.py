@@ -87,6 +87,8 @@ def run_task(
             review_model_id=review_model_id,
             session_store=session_store,
             runtime=runtime,
+            block_on_allocation=True,
+            allocation_include_repair=not no_tests,
         )
         with Progress(
             SpinnerColumn(),

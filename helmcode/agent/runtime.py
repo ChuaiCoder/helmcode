@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from helmcode.agent.allocation import CodingPlanTaskAllocator, TaskAllocation
 from helmcode.agent.session import AgentSession
 from helmcode.context.workspace import Workspace
+from helmcode.core.exceptions import ModelError
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ProviderAdapter
 from helmcode.models.quota import ModelSelection, QuotaAwareSelector
@@ -25,6 +27,28 @@ class AgentRuntime:
         self.provider_resolver = provider_resolver
         self.session_store = session_store
         self.override_model_id = override_model_id
+
+    def allocate_task(
+        self,
+        *,
+        session: AgentSession,
+        task: str,
+        include_repair: bool = False,
+        block_on_required: bool = True,
+    ) -> TaskAllocation | None:
+        if self.selector is None:
+            return None
+        allocation = CodingPlanTaskAllocator(self.selector.config, self.selector).allocate(
+            task,
+            override_model_id=self.override_model_id,
+            include_repair=include_repair,
+        )
+        payload = allocation.to_dict()
+        session.record("task_allocated", payload)
+        self._record(session.session_id, "task_allocated", payload)
+        if block_on_required and allocation.blocked:
+            raise ModelError("Coding Plan allocation blocked: " + "; ".join(allocation.warnings))
+        return allocation
 
     def select_model(
         self,
