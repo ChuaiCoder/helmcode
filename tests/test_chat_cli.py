@@ -328,6 +328,46 @@ def test_permissions_command_routes_subcommands(monkeypatch, tmp_path: Path) -> 
     ]
 
 
+def test_memory_command_routes_subcommands(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path, yes=True)
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def record_list(**kwargs):
+        calls.append(("list", kwargs))
+
+    def record_add(**kwargs):
+        calls.append(("add", kwargs))
+
+    def record_show(**kwargs):
+        calls.append(("show", kwargs))
+
+    def record_forget(**kwargs):
+        calls.append(("forget", kwargs))
+
+    def record_clear(**kwargs):
+        calls.append(("clear", kwargs))
+
+    monkeypatch.setattr(chat.memory_command, "list_memory", record_list)
+    monkeypatch.setattr(chat.memory_command, "add_memory", record_add)
+    monkeypatch.setattr(chat.memory_command, "show_memory", record_show)
+    monkeypatch.setattr(chat.memory_command, "forget_memory", record_forget)
+    monkeypatch.setattr(chat.memory_command, "clear_memory", record_clear)
+
+    assert chat.handle_interactive_line("/memory", state) is True
+    assert chat.handle_interactive_line("/memory add prefer quota routing", state) is True
+    assert chat.handle_interactive_line("/memory show quota", state) is True
+    assert chat.handle_interactive_line("/memory forget quota", state) is True
+    assert chat.handle_interactive_line("/memory clear", state) is True
+
+    assert calls == [
+        ("list", {"workspace": tmp_path, "output_json": False}),
+        ("add", {"text": "prefer quota routing", "memory_id": None, "workspace": tmp_path, "output_json": False}),
+        ("show", {"memory_id": "quota", "workspace": tmp_path, "output_json": False}),
+        ("forget", {"memory_id": "quota", "workspace": tmp_path, "yes": True, "output_json": False}),
+        ("clear", {"workspace": tmp_path, "yes": True, "output_json": False}),
+    ]
+
+
 def test_commit_command_creates_local_commit(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path, yes=True)
     calls: list[dict[str, object]] = []

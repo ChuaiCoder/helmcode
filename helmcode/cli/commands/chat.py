@@ -24,6 +24,7 @@ from helmcode.cli.commands import (
     index,
     init_project,
     keys,
+    memory as memory_command,
     mcp,
     models,
     permissions,
@@ -296,6 +297,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/skills":
         skills.list_skills(workspace=state.workspace_path)
         return True
+    if command == "/memory":
+        _memory(rest, state)
+        return True
     if command == "/skill-match":
         _require_task(rest, "/skill-match")
         skills.match_skills(task=rest, workspace=state.workspace_path)
@@ -514,6 +518,7 @@ def _print_help(compact: bool) -> None:
         ("/savings", "Show historical Coding Plan savings."),
         ("/allocations [session]", "Show Coding Plan allocation history."),
         ("/skills", "List built-in and project skills."),
+        ("/memory [list|add|show|forget|clear]", "Manage pinned project memory."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),
         ("/mcp", "List configured MCP servers."),
@@ -753,6 +758,45 @@ def _permissions(rest: str, state: InteractiveState) -> None:
         )
         return
     raise ValueError("/permissions supports: list, add <command>, remove <command>, clear")
+
+
+def _memory(rest: str, state: InteractiveState) -> None:
+    parts = rest.split(maxsplit=1)
+    if not parts or parts[0] == "list":
+        memory_command.list_memory(workspace=state.workspace_path, output_json=False)
+        return
+    subcommand = parts[0]
+    value = parts[1] if len(parts) == 2 else ""
+    if subcommand == "add":
+        _require_task(value, "/memory add")
+        memory_command.add_memory(
+            text=value,
+            memory_id=None,
+            workspace=state.workspace_path,
+            output_json=False,
+        )
+        return
+    if subcommand == "show":
+        _require_task(value, "/memory show")
+        memory_command.show_memory(memory_id=value, workspace=state.workspace_path, output_json=False)
+        return
+    if subcommand in {"forget", "delete", "remove"}:
+        _require_task(value, "/memory forget")
+        memory_command.forget_memory(
+            memory_id=value,
+            workspace=state.workspace_path,
+            yes=state.yes,
+            output_json=False,
+        )
+        return
+    if subcommand == "clear":
+        memory_command.clear_memory(
+            workspace=state.workspace_path,
+            yes=state.yes or value in {"yes", "--yes", "-y"},
+            output_json=False,
+        )
+        return
+    raise ValueError("/memory supports: list, add <text>, show <id>, forget <id>, clear")
 
 
 def _normalize_mode(value: str) -> str:

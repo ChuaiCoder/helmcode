@@ -149,6 +149,8 @@ helmcode checkpoint restore <checkpoint-id> --dry-run
 helmcode restore <checkpoint-id> --yes
 helmcode index build
 helmcode index changed
+helmcode memory add "Prefer quota routing before coding model calls" --id quota-routing
+helmcode memory list
 helmcode skills list
 helmcode skills match "optimize codingplan quota routing"
 helmcode tools list
@@ -215,6 +217,7 @@ commands to control the session:
 /permissions [list|add|remove|clear] manage workspace shell permissions
 /index                        show local file index status
 /changed                      show files changed since index build
+/memory [list|add|show|forget|clear] manage pinned project memory
 /skills                       list built-in and project skills
 /skill-match <task>           show skills matched for a task
 /tools                        list local tools
@@ -331,6 +334,13 @@ the commit scope, and `--yes` for non-interactive use.
 `.helmcode/file_index.json`. `helmcode index changed` reports files that changed
 since the last index build. These commands are local-only and are used by the
 context builder to keep repo scans cheap and repeatable.
+
+`helmcode memory` manages pinned project memory stored in
+`.helmcode/memory.json`. These entries are injected into every task context
+under `Pinned project memory`, so future `plan`, `run`, review, and repair
+model calls can reuse stable project facts without repeating them in each
+prompt. Secret-looking text such as API keys, tokens, passwords, and private
+keys is rejected before it can be pinned.
 
 `helmcode skills` manages built-in and project skills. Project skills live in
 `.agents/skills/*.json`. When a task matches a skill trigger, the skill
