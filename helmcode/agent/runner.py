@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from helmcode.agent.allocation import AgentAssignment, TaskAllocation
 from helmcode.agent.executor import TestRunResult
@@ -14,6 +15,7 @@ from helmcode.context.workspace import Workspace
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
 from helmcode.core.exceptions import ModelError, PermissionDenied
 from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY
+from helmcode.memory.hooks import HookRunner
 from helmcode.memory.preplan_cache import PreplanCache
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ChatMessage, ModelResponse, ProviderAdapter
@@ -129,6 +131,7 @@ class RunOrchestrator:
         state = AgentState.start(self.workspace.root_path, task)
         session = self._session_from_state(state, task)
         self._record(state.session_id, "user_message", {"content": task})
+        self._run_hooks(session, "pre_plan", {"task": task})
         allocation = self._allocate_task(session, task)
         preplan_context = self._run_preplan_agents(session, task, allocation)
         selection = self._select_model(
@@ -153,6 +156,7 @@ class RunOrchestrator:
         plan = agent.plan(task, preplan_context=preplan_context)
         self._record_model_call(session, selection, agent.last_plan_response)
         self._record(state.session_id, "plan_created", {"content": plan.content})
+        self._run_hooks(session, "post_plan", {"task": task, "plan": plan.content})
         return PlannedRun(task=task, plan=plan.content, session_id=state.session_id)
 
     def prepare(self, task: str) -> PreparedRun:
@@ -164,6 +168,7 @@ class RunOrchestrator:
         state = AgentState.start(self.workspace.root_path, planned.task)
         state.session_id = planned.session_id
         session = self._session_from_state(state, planned.task)
+        self._run_hooks(session, "pre_patch", {"task": planned.task, "plan": planned.plan})
         selection = self._select_model(
             session=session,
             role="coding",
@@ -190,6 +195,11 @@ class RunOrchestrator:
             state.session_id,
             "patch_created",
             {"files": generated_patch.files, "patch": generated_patch.content},
+        )
+        self._run_hooks(
+            session,
+            "post_patch",
+            {"task": planned.task, "files": generated_patch.files},
         )
         review = self._review_patch(
             session=session,
@@ -230,6 +240,7 @@ class RunOrchestrator:
         applied_files = agent.apply_pending_patch(confirmed=True)
         self._clear_pending_patch_file()
         self._record(prepared.session_id, "patch_applied", {"files": applied_files})
+        self._run_hooks(session, "post_apply", {"task": prepared.task, "files": applied_files})
         repair_attempts = 0
         if run_tests:
             test_result = self._run_tests(agent)
@@ -238,6 +249,11 @@ class RunOrchestrator:
                 prepared.session_id,
                 "command_result",
                 {"command": "auto-detected tests", "ok": test_result.ok, "output": test_output},
+            )
+            self._run_hooks(
+                session,
+                "post_test",
+                {"task": prepared.task, "ok": test_result.ok, "output": test_output},
             )
             while not test_result.ok and repair_attempts < self.max_repair_attempts:
                 repair_attempts += 1
@@ -291,6 +307,16 @@ class RunOrchestrator:
                         "output": test_result.output,
                     },
                 )
+                self._run_hooks(
+                    session,
+                    "post_test",
+                    {
+                        "task": prepared.task,
+                        "repair_attempt": repair_attempts,
+                        "ok": test_result.ok,
+                        "output": test_result.output,
+                    },
+                )
 
         return RunResult(
             plan=prepared.plan,
@@ -319,6 +345,15 @@ class RunOrchestrator:
     def _record(self, session_id: str, event_type: str, payload: dict[str, object]) -> None:
         if self.session_store is not None:
             self.session_store.record(session_id, event_type, payload)
+
+    def _run_hooks(self, session: AgentSession, event: str, payload: dict[str, Any]) -> None:
+        runner = HookRunner(self.workspace.root_path, permission_mode=self.permission_mode)
+        for result in runner.run_event(event, session_id=session.session_id, payload=payload):
+            event_payload = result.to_event_payload()
+            session.record("hook_result", event_payload)
+            self._record(session.session_id, "hook_result", event_payload)
+            if result.hook.required and not result.ok:
+                raise PermissionDenied(f"required hook failed: {result.hook.id}: {result.output}")
 
     def _clear_pending_patch_file(self) -> None:
         patch_path = self.workspace.root_path / SESSION_DIR_NAME / PENDING_PATCH_FILE

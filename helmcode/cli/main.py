@@ -20,6 +20,7 @@ from helmcode.cli.commands import (
     cost,
     diff,
     doctor,
+    hooks,
     index,
     init_project,
     keys,
@@ -58,6 +59,7 @@ app.add_typer(tools.app, name="tools")
 app.add_typer(mcp.app, name="mcp")
 app.add_typer(quota.app, name="quota")
 app.add_typer(permissions.app, name="permissions")
+app.add_typer(hooks.app, name="hooks")
 
 
 @app.callback(invoke_without_command=True)

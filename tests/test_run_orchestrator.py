@@ -5,6 +5,7 @@ from helmcode.agent.runner import RunOrchestrator
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import HelmcodeConfig, QuotaPolicyConfig, QuotaWindowConfig
 from helmcode.core.exceptions import ModelError, PermissionDenied
+from helmcode.memory.hooks import HookStore
 from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
 from helmcode.models.provider import ChatMessage, ModelResponse
 
@@ -548,6 +549,102 @@ def test_runner_records_coding_plan_allocation_event(tmp_path: Path) -> None:
         "planner",
         "coder",
     ]
+
+
+def test_runner_records_hook_results_before_planning_provider_call(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    HookStore(tmp_path).add(
+        event="pre_plan",
+        command='python -c "import sys,json; print(json.load(sys.stdin)[\'payload\'][\'task\'])"',
+        hook_id="task-check",
+    )
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    provider = SequenceProvider("not a patch")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        session_store=store,
+    )
+
+    runner.plan("update greeting")
+
+    hook_events = [
+        payload
+        for _sid, event_type, payload in store.events
+        if event_type == "hook_result"
+    ]
+    assert len(hook_events) == 1
+    assert hook_events[0]["hook_id"] == "task-check"
+    assert hook_events[0]["event"] == "pre_plan"
+    assert hook_events[0]["ok"] is True
+    assert hook_events[0]["output"] == "update greeting"
+    assert len(provider.calls) == 1
+
+
+def test_runner_required_hook_failure_blocks_provider_call(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    HookStore(tmp_path).add(
+        event="pre_plan",
+        command='python -c "import sys; print(\'nope\'); sys.exit(7)"',
+        hook_id="required-precheck",
+        required=True,
+    )
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    provider = SequenceProvider("not called")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        session_store=store,
+    )
+
+    try:
+        runner.plan("update greeting")
+    except PermissionDenied as exc:
+        assert "required hook failed: required-precheck" in str(exc)
+    else:
+        raise AssertionError("required hook failure should block planning")
+
+    assert provider.calls == []
+    hook_events = [
+        payload
+        for _sid, event_type, payload in store.events
+        if event_type == "hook_result"
+    ]
+    assert hook_events[0]["ok"] is False
+    assert "nope" in hook_events[0]["output"]
+
+
+def test_runner_ignores_disabled_hooks(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    HookStore(tmp_path).add(
+        event="pre_plan",
+        command='python -c "from pathlib import Path; Path(\'hook-ran.txt\').write_text(\'ran\')"',
+        hook_id="disabled-precheck",
+        enabled=False,
+    )
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider("not a patch"),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        session_store=store,
+    )
+
+    runner.plan("update greeting")
+
+    assert not (tmp_path / "hook-ran.txt").exists()
+    assert not [event for event in store.events if event[1] == "hook_result"]
 
 
 def test_runner_executes_preplan_agents_and_injects_context(tmp_path: Path) -> None:

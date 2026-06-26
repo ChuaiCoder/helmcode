@@ -16,6 +16,7 @@ class ShellInput(BaseModel):
     root_path: Path = Path.cwd()
     permission_mode: str = "suggest"
     timeout_seconds: int = 120
+    stdin: str | None = None
 
 
 class ShellTool(Tool):
@@ -45,16 +46,36 @@ class ShellTool(Tool):
                     "requires_confirmation": decision.requires_confirmation,
                 },
             )
-        completed = subprocess.run(
-            params.command,
-            cwd=params.root_path,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=params.timeout_seconds,
-        )
+        try:
+            completed = subprocess.run(
+                params.command,
+                cwd=params.root_path,
+                shell=True,
+                capture_output=True,
+                text=True,
+                input=params.stdin,
+                timeout=params.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            output = _timeout_output(exc)
+            return ToolResult(
+                ok=False,
+                content=f"command timed out after {params.timeout_seconds}s{output}",
+                data={"timed_out": True},
+            )
         return ToolResult(
             ok=completed.returncode == 0,
             content=(completed.stdout + completed.stderr).strip(),
             data={"returncode": completed.returncode},
         )
+
+
+def _timeout_output(exc: subprocess.TimeoutExpired) -> str:
+    parts = []
+    if exc.stdout:
+        parts.append(str(exc.stdout).strip())
+    if exc.stderr:
+        parts.append(str(exc.stderr).strip())
+    if not parts:
+        return ""
+    return "\n" + "\n".join(parts)

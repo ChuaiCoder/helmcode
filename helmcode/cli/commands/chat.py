@@ -21,6 +21,7 @@ from helmcode.cli.commands import (
     cost,
     diff,
     doctor,
+    hooks as hooks_command,
     index,
     init_project,
     keys,
@@ -162,6 +163,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/permissions":
         _permissions(rest, state)
+        return True
+    if command == "/hooks":
+        _hooks(rest, state)
         return True
     if command == "/budget":
         _set_budget(state, rest)
@@ -530,6 +534,7 @@ def _print_help(compact: bool) -> None:
         ("/keys", "Show provider key readiness without printing secrets."),
         ("/quota [history|reset]", "Show or manage local quota estimates."),
         ("/permissions [list|add|remove|clear]", "Manage workspace shell permissions."),
+        ("/hooks [list|add|remove|enable|disable]", "Manage workspace lifecycle hooks."),
         ("/session-budget", "Show current cumulative Coding Plan budget usage."),
         ("/index", "Show local file index status."),
         ("/changed", "Show files changed since index build."),
@@ -758,6 +763,88 @@ def _permissions(rest: str, state: InteractiveState) -> None:
         )
         return
     raise ValueError("/permissions supports: list, add <command>, remove <command>, clear")
+
+
+def _hooks(rest: str, state: InteractiveState) -> None:
+    parts = rest.split(maxsplit=1)
+    if not parts or parts[0] in {"list", "reload"}:
+        hooks_command.list_hooks(workspace=state.workspace_path, event=None, output_json=False)
+        return
+    subcommand = parts[0]
+    value = parts[1] if len(parts) == 2 else ""
+    if subcommand == "events":
+        hooks_command.list_events(output_json=False)
+        return
+    if subcommand == "add":
+        event_and_command = value.split(maxsplit=1)
+        if len(event_and_command) != 2:
+            raise ValueError("/hooks add requires: <event> <command>")
+        event, hook_command = event_and_command
+        required = False
+        disabled = False
+        while hook_command.startswith("--required ") or hook_command.startswith("--disabled "):
+            if hook_command.startswith("--required "):
+                required = True
+                hook_command = hook_command[len("--required ") :].strip()
+            elif hook_command.startswith("--disabled "):
+                disabled = True
+                hook_command = hook_command[len("--disabled ") :].strip()
+        hooks_command.add_hook(
+            event=event,
+            command=hook_command,
+            hook_id=None,
+            required=required,
+            disabled=disabled,
+            timeout_seconds=30,
+            description="",
+            workspace=state.workspace_path,
+            output_json=False,
+        )
+        return
+    if subcommand == "show":
+        _require_task(value, "/hooks show")
+        hooks_command.show_hook(hook_id=value, workspace=state.workspace_path, output_json=False)
+        return
+    if subcommand in {"remove", "rm", "delete"}:
+        _require_task(value, "/hooks remove")
+        hooks_command.remove_hook(
+            hook_id=value,
+            workspace=state.workspace_path,
+            yes=state.yes,
+            output_json=False,
+        )
+        return
+    if subcommand == "enable":
+        _require_task(value, "/hooks enable")
+        hooks_command.enable_hook(hook_id=value, workspace=state.workspace_path, output_json=False)
+        return
+    if subcommand == "disable":
+        _require_task(value, "/hooks disable")
+        hooks_command.disable_hook(hook_id=value, workspace=state.workspace_path, output_json=False)
+        return
+    if subcommand == "require":
+        _require_task(value, "/hooks require")
+        hooks_command.require_hook(hook_id=value, workspace=state.workspace_path, output_json=False)
+        return
+    if subcommand == "optional":
+        _require_task(value, "/hooks optional")
+        hooks_command.optional_hook(
+            hook_id=value,
+            workspace=state.workspace_path,
+            output_json=False,
+        )
+        return
+    if subcommand == "clear":
+        hooks_command.clear_hooks(
+            workspace=state.workspace_path,
+            yes=state.yes or value in {"yes", "--yes", "-y"},
+            output_json=False,
+        )
+        return
+    raise ValueError(
+        "/hooks supports: list, events, add <event> <command>, show <id>, "
+        "remove <id>, enable <id>, disable <id>, require <id>, optional <id>, clear"
+    )
 
 
 def _memory(rest: str, state: InteractiveState) -> None:

@@ -144,6 +144,10 @@ helmcode quota reset --unit token --yes
 helmcode permissions
 helmcode permissions add "git push" --yes
 helmcode permissions remove "git push" --yes
+helmcode hooks events
+helmcode hooks add pre_plan "python scripts/pre_plan_check.py" --required
+helmcode hooks list
+helmcode hooks disable <hook-id>
 helmcode checkpoint create "before risky refactor"
 helmcode checkpoint restore <checkpoint-id> --dry-run
 helmcode restore <checkpoint-id> --yes
@@ -215,6 +219,7 @@ commands to control the session:
 /keys                         show provider key readiness without printing secrets
 /quota [history|reset]        show or manage local quota estimates
 /permissions [list|add|remove|clear] manage workspace shell permissions
+/hooks [list|add|remove|enable|disable] manage workspace lifecycle hooks
 /index                        show local file index status
 /changed                      show files changed since index build
 /memory [list|add|show|forget|clear] manage pinned project memory
@@ -371,6 +376,25 @@ when explicitly allowed for the workspace. Destructive block patterns such as
 `git reset --hard`, recursive delete, or database drop commands are still
 blocked even if a matching prefix is present.
 
+`helmcode hooks` manages Reasonix-style local lifecycle hooks stored in
+`.helmcode/hooks.json`. Supported events are `pre_plan`, `post_plan`,
+`pre_patch`, `post_patch`, `post_apply`, and `post_test`. Hooks execute through
+the same shell tool and permission policy as agent commands, so trusted commands
+can be enabled with `helmcode permissions` while destructive patterns remain
+blocked. Each hook receives JSON on stdin with the event name, hook id,
+workspace path, session id, timestamp, and event payload. Optional hook failures
+are recorded as `hook_result` session events and do not stop the workflow;
+`--required` hooks block the workflow on failure.
+
+```bash
+helmcode hooks events
+helmcode hooks add pre_plan "python scripts/check_budget.py" --required --timeout 10
+helmcode hooks add post_test "python scripts/collect_test_log.py"
+helmcode hooks disable <hook-id>
+helmcode hooks require <hook-id>
+helmcode hooks clear --yes
+```
+
 `helmcode mcp` manages MCP server configuration for future external tool
 runtime integration. This is configuration and validation only; it does not
 pretend to call MCP tools yet:
@@ -505,7 +529,8 @@ findings avoid a model call, `model_blocked` events when quota prevents a real
 provider call, `task_budget_blocked` events when a per-task cost-score cap
 prevents a run, `task_session_budget_reserved` events when cumulative budget is
 consumed, `task_session_budget_blocked` events when cumulative budget prevents
-a run, and `model_selected` or `model_called` events as execution proceeds. Use
+a run, `hook_result` events for lifecycle hook outcomes, and `model_selected`
+or `model_called` events as execution proceeds. Use
 these commands to inspect what the agent allocated, selected, called,
 generated, applied, and verified:
 

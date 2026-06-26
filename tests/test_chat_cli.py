@@ -328,6 +328,95 @@ def test_permissions_command_routes_subcommands(monkeypatch, tmp_path: Path) -> 
     ]
 
 
+def test_hooks_command_routes_subcommands(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path, yes=True)
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def record_list(**kwargs):
+        calls.append(("list", kwargs))
+
+    def record_events(**kwargs):
+        calls.append(("events", kwargs))
+
+    def record_add(**kwargs):
+        calls.append(("add", kwargs))
+
+    def record_show(**kwargs):
+        calls.append(("show", kwargs))
+
+    def record_disable(**kwargs):
+        calls.append(("disable", kwargs))
+
+    def record_enable(**kwargs):
+        calls.append(("enable", kwargs))
+
+    def record_require(**kwargs):
+        calls.append(("require", kwargs))
+
+    def record_optional(**kwargs):
+        calls.append(("optional", kwargs))
+
+    def record_remove(**kwargs):
+        calls.append(("remove", kwargs))
+
+    def record_clear(**kwargs):
+        calls.append(("clear", kwargs))
+
+    monkeypatch.setattr(chat.hooks_command, "list_hooks", record_list)
+    monkeypatch.setattr(chat.hooks_command, "list_events", record_events)
+    monkeypatch.setattr(chat.hooks_command, "add_hook", record_add)
+    monkeypatch.setattr(chat.hooks_command, "show_hook", record_show)
+    monkeypatch.setattr(chat.hooks_command, "disable_hook", record_disable)
+    monkeypatch.setattr(chat.hooks_command, "enable_hook", record_enable)
+    monkeypatch.setattr(chat.hooks_command, "require_hook", record_require)
+    monkeypatch.setattr(chat.hooks_command, "optional_hook", record_optional)
+    monkeypatch.setattr(chat.hooks_command, "remove_hook", record_remove)
+    monkeypatch.setattr(chat.hooks_command, "clear_hooks", record_clear)
+
+    assert chat.handle_interactive_line("/hooks", state) is True
+    assert chat.handle_interactive_line("/hooks events", state) is True
+    assert (
+        chat.handle_interactive_line("/hooks add pre_plan --required python -m pytest -q", state)
+        is True
+    )
+    assert chat.handle_interactive_line("/hooks show precheck", state) is True
+    assert chat.handle_interactive_line("/hooks disable precheck", state) is True
+    assert chat.handle_interactive_line("/hooks enable precheck", state) is True
+    assert chat.handle_interactive_line("/hooks require precheck", state) is True
+    assert chat.handle_interactive_line("/hooks optional precheck", state) is True
+    assert chat.handle_interactive_line("/hooks remove precheck", state) is True
+    assert chat.handle_interactive_line("/hooks clear", state) is True
+
+    assert calls == [
+        ("list", {"workspace": tmp_path, "event": None, "output_json": False}),
+        ("events", {"output_json": False}),
+        (
+            "add",
+            {
+                "event": "pre_plan",
+                "command": "python -m pytest -q",
+                "hook_id": None,
+                "required": True,
+                "disabled": False,
+                "timeout_seconds": 30,
+                "description": "",
+                "workspace": tmp_path,
+                "output_json": False,
+            },
+        ),
+        ("show", {"hook_id": "precheck", "workspace": tmp_path, "output_json": False}),
+        ("disable", {"hook_id": "precheck", "workspace": tmp_path, "output_json": False}),
+        ("enable", {"hook_id": "precheck", "workspace": tmp_path, "output_json": False}),
+        ("require", {"hook_id": "precheck", "workspace": tmp_path, "output_json": False}),
+        ("optional", {"hook_id": "precheck", "workspace": tmp_path, "output_json": False}),
+        (
+            "remove",
+            {"hook_id": "precheck", "workspace": tmp_path, "yes": True, "output_json": False},
+        ),
+        ("clear", {"workspace": tmp_path, "yes": True, "output_json": False}),
+    ]
+
+
 def test_memory_command_routes_subcommands(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path, yes=True)
     calls: list[tuple[str, dict[str, object]]] = []
