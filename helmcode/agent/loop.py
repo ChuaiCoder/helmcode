@@ -14,6 +14,7 @@ from helmcode.models.provider import ModelResponse, ProviderAdapter
 class GeneratedPatch:
     content: str
     files: list[str]
+    response: ModelResponse | None = None
 
 
 class AgentLoop:
@@ -40,9 +41,13 @@ class AgentLoop:
         self.planner = Planner(workspace, model_provider, model_id)
         self.coder = Coder(workspace, self.coding_provider, self.coding_model_id)
         self.executor = executor or Executor(workspace.root_path, permission_mode=permission_mode)
+        self.last_model_response: ModelResponse | None = None
+        self.last_plan_response: ModelResponse | None = None
 
     def plan(self, task: str, preplan_context: str | None = None) -> AgentPlan:
         response: ModelResponse = self.planner.create_plan(task, preplan_context=preplan_context)
+        self.last_model_response = response
+        self.last_plan_response = response
         self.state.plan = AgentPlan(content=response.content)
         return self.state.plan
 
@@ -56,8 +61,9 @@ class AgentLoop:
             self.plan(task)
         assert self.state.plan is not None
         response: ModelResponse = self.coder.create_patch(task, self.state.plan.content)
+        self.last_model_response = response
         files = self.prepare_patch(response.content)
-        return GeneratedPatch(content=response.content, files=files)
+        return GeneratedPatch(content=response.content, files=files, response=response)
 
     def generate_repair_patch(self, task: str, failing_output: str) -> GeneratedPatch:
         if self.state.plan is None:
@@ -68,8 +74,9 @@ class AgentLoop:
             plan=self.state.plan.content,
             failing_output=failing_output,
         )
+        self.last_model_response = response
         files = self.prepare_patch(response.content)
-        return GeneratedPatch(content=response.content, files=files)
+        return GeneratedPatch(content=response.content, files=files, response=response)
 
     def apply_pending_patch(self, confirmed: bool) -> list[str]:
         if self.state.pending_patch is None:

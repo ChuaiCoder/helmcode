@@ -53,7 +53,19 @@ def test_sessions_stats_json_reports_aggregate_counts(tmp_path: Path) -> None:
             "estimated_savings_score": 5,
         },
     )
-    store.record("session-a", "model_called", {"model_id": "main:planner"})
+    store.record(
+        "session-a",
+        "model_called",
+        {
+            "model_id": "main:planner",
+            "usage": {
+                "prompt_tokens": 25,
+                "completion_tokens": 5,
+                "total_tokens": 30,
+                "cached_tokens": 10,
+            },
+        },
+    )
     store.record("session-a", "command_result", {"ok": True})
 
     result = CliRunner().invoke(
@@ -66,6 +78,10 @@ def test_sessions_stats_json_reports_aggregate_counts(tmp_path: Path) -> None:
     assert payload["session_count"] == 1
     assert payload["event_count"] == 3
     assert payload["model_call_count"] == 1
+    assert payload["model_prompt_tokens"] == 25
+    assert payload["model_completion_tokens"] == 5
+    assert payload["model_total_tokens"] == 30
+    assert payload["model_cached_tokens"] == 10
     assert payload["coding_plan_allocation_count"] == 1
     assert payload["coding_plan_baseline_cost_score"] == 8
     assert payload["coding_plan_selected_cost_score"] == 3

@@ -23,7 +23,20 @@ def test_session_store_lists_sessions_with_task_and_counts(tmp_path: Path) -> No
 def test_session_store_lists_recent_events_and_stats(tmp_path: Path) -> None:
     store = SessionStore(tmp_path, enable_structured_logging=False)
     store.record("session-a", "user_message", {"content": "add tests"})
-    store.record("session-a", "model_called", {"model_id": "main:planner"})
+    store.record(
+        "session-a",
+        "model_called",
+        {
+            "model_id": "main:planner",
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 30,
+                "total_tokens": 130,
+                "cached_tokens": 70,
+                "cache_miss_tokens": 30,
+            },
+        },
+    )
     store.record(
         "session-a",
         "task_allocated",
@@ -54,6 +67,11 @@ def test_session_store_lists_recent_events_and_stats(tmp_path: Path) -> None:
     assert stats.session_count == 2
     assert stats.event_count == 8
     assert stats.model_call_count == 1
+    assert stats.model_prompt_tokens == 100
+    assert stats.model_completion_tokens == 30
+    assert stats.model_total_tokens == 130
+    assert stats.model_cached_tokens == 70
+    assert stats.model_cache_miss_tokens == 30
     assert stats.coding_plan_allocation_count == 2
     assert stats.coding_plan_baseline_cost_score == 24
     assert stats.coding_plan_selected_cost_score == 15

@@ -53,6 +53,11 @@ class SessionStats:
     event_count: int
     event_counts: dict[str, int]
     model_call_count: int
+    model_prompt_tokens: int
+    model_completion_tokens: int
+    model_total_tokens: int
+    model_cached_tokens: int
+    model_cache_miss_tokens: int
     coding_plan_allocation_count: int
     coding_plan_baseline_cost_score: int
     coding_plan_selected_cost_score: int
@@ -70,6 +75,11 @@ class SessionStats:
             "event_count": self.event_count,
             "event_counts": self.event_counts,
             "model_call_count": self.model_call_count,
+            "model_prompt_tokens": self.model_prompt_tokens,
+            "model_completion_tokens": self.model_completion_tokens,
+            "model_total_tokens": self.model_total_tokens,
+            "model_cached_tokens": self.model_cached_tokens,
+            "model_cache_miss_tokens": self.model_cache_miss_tokens,
             "coding_plan_allocation_count": self.coding_plan_allocation_count,
             "coding_plan_baseline_cost_score": self.coding_plan_baseline_cost_score,
             "coding_plan_selected_cost_score": self.coding_plan_selected_cost_score,
@@ -274,16 +284,29 @@ class SessionStore:
                 WHERE event_type = 'task_allocated'
                 """
             ).fetchall()
+            model_call_rows = conn.execute(
+                """
+                SELECT payload
+                FROM events
+                WHERE event_type = 'model_called'
+                """
+            ).fetchall()
         event_counts = {event_type: int(count) for event_type, count in rows}
         first_event_at = datetime.fromisoformat(bounds[0]) if bounds and bounds[0] else None
         last_event_at = datetime.fromisoformat(bounds[1]) if bounds and bounds[1] else None
         event_count = int(bounds[2]) if bounds else 0
         allocations = [_load_payload(row[0]) for row in allocation_rows]
+        model_calls = [_load_payload(row[0]) for row in model_call_rows]
         return SessionStats(
             session_count=int(session_count or 0),
             event_count=event_count,
             event_counts=event_counts,
             model_call_count=event_counts.get("model_called", 0),
+            model_prompt_tokens=sum(_payload_usage_int(payload, "prompt_tokens") for payload in model_calls),
+            model_completion_tokens=sum(_payload_usage_int(payload, "completion_tokens") for payload in model_calls),
+            model_total_tokens=sum(_payload_usage_int(payload, "total_tokens") for payload in model_calls),
+            model_cached_tokens=sum(_payload_usage_int(payload, "cached_tokens") for payload in model_calls),
+            model_cache_miss_tokens=sum(_payload_usage_int(payload, "cache_miss_tokens") for payload in model_calls),
             coding_plan_allocation_count=len(allocations),
             coding_plan_baseline_cost_score=sum(
                 _payload_int(payload, "baseline_cost_score") for payload in allocations
@@ -391,3 +414,10 @@ def _payload_int(payload: dict[str, Any], key: str) -> int:
         except ValueError:
             return 0
     return 0
+
+
+def _payload_usage_int(payload: dict[str, Any], key: str) -> int:
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return 0
+    return _payload_int(usage, key)

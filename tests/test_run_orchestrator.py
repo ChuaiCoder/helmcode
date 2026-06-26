@@ -21,6 +21,17 @@ class SequenceProvider:
         return ModelResponse(content=self.patch)
 
 
+class UsageProvider:
+    def __init__(self, content: str, usage: dict[str, object]) -> None:
+        self.content = content
+        self.usage = usage
+        self.calls: list[tuple[str, list[ChatMessage]]] = []
+
+    def chat(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
+        self.calls.append((model, messages))
+        return ModelResponse(content=self.content, raw={"usage": self.usage})
+
+
 class RecordingExecutor:
     def __init__(self, root_path: Path | None = None) -> None:
         self.root_path = root_path
@@ -428,6 +439,65 @@ def test_runner_runtime_records_model_calls_to_quota_ledger(tmp_path: Path) -> N
         ("planning", "fake:planning"),
         ("coding", "fake:coding"),
     ]
+
+
+def test_runner_records_model_usage_and_token_quota_amount(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+        },
+        quota_policies=[
+            QuotaPolicyConfig(
+                id="planning_tokens",
+                model_patterns=["fake:planning"],
+                unit="token",
+                windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=100)],
+            )
+        ],
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, ledger),
+        session_store=store,
+    )
+    provider = UsageProvider(
+        "PLAN:\n1. Update hello.txt.\n2. Run pytest.",
+        {
+            "prompt_tokens": 40,
+            "completion_tokens": 8,
+            "total_tokens": 48,
+            "prompt_tokens_details": {"cached_tokens": 25},
+        },
+    )
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+        block_on_allocation=False,
+    )
+
+    runner.plan("plan a greeting helper")
+
+    model_called = [payload for _sid, event_type, payload in store.events if event_type == "model_called"]
+    assert model_called[0]["usage"] == {
+        "prompt_tokens": 40,
+        "completion_tokens": 8,
+        "total_tokens": 48,
+        "cached_tokens": 25,
+    }
+    records = ledger.load()
+    assert records[0].unit == "token"
+    assert records[0].amount == 48
 
 
 def test_runner_records_coding_plan_allocation_event(tmp_path: Path) -> None:

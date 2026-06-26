@@ -352,6 +352,12 @@ sessions: allocation count, baseline cost score, selected cost score, estimated
 savings score, and budget-block count. The JSON form exposes these as stable
 fields for dashboards or quota tooling.
 
+When an OpenAI-compatible provider returns a `usage` block, helmcode records
+standardized prompt, completion, total, cached, cache-miss, and reasoning token
+counts on `model_called` events. `helmcode stats` aggregates those token and
+cache counters. Quota policies with `unit: token` consume the returned
+`total_tokens` value instead of treating every model call as a single request.
+
 These commands are local-only and do not call a provider.
 
 ## Example Tasks

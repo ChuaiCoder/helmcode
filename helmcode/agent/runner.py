@@ -15,7 +15,7 @@ from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
 from helmcode.core.exceptions import ModelError, PermissionDenied
 from helmcode.memory.preplan_cache import PreplanCache
 from helmcode.memory.session_store import SessionStore
-from helmcode.models.provider import ChatMessage, ProviderAdapter
+from helmcode.models.provider import ChatMessage, ModelResponse, ProviderAdapter
 from helmcode.models.quota import (
     TASK_CODE_PATCH,
     TASK_PLAN,
@@ -146,7 +146,7 @@ class RunOrchestrator:
             executor=self.external_executor,
         )
         plan = agent.plan(task, preplan_context=preplan_context)
-        self._record_model_call(session, selection)
+        self._record_model_call(session, selection, agent.last_plan_response)
         self._record(state.session_id, "plan_created", {"content": plan.content})
         return PlannedRun(task=task, plan=plan.content, session_id=state.session_id)
 
@@ -180,7 +180,7 @@ class RunOrchestrator:
         )
         state.plan = AgentPlan(content=planned.plan)
         generated_patch = agent.generate_patch(planned.task)
-        self._record_model_call(session, selection)
+        self._record_model_call(session, selection, generated_patch.response)
         self._record(
             state.session_id,
             "patch_created",
@@ -256,7 +256,7 @@ class RunOrchestrator:
                     executor=self.external_executor,
                 )
                 repair_patch = repair_agent.generate_repair_patch(prepared.task, test_result.output)
-                self._record_model_call(session, repair_selection)
+                self._record_model_call(session, repair_selection, repair_patch.response)
                 self._record(
                     prepared.session_id,
                     "patch_created",
@@ -333,7 +333,7 @@ class RunOrchestrator:
         )
         review_provider = self._provider_for(selection, self.review_provider)
         review = Reviewer(review_provider, selection.model_id).review_patch(patch)
-        self._record_model_call(session, selection)
+        self._record_model_call(session, selection, review)
         self._record(session.session_id, "patch_reviewed", {"content": review.content})
         return review.content
 
@@ -382,9 +382,14 @@ class RunOrchestrator:
             return default_provider
         return self.runtime.provider_for_model(selection.model_id, default_provider)
 
-    def _record_model_call(self, session: AgentSession, selection: ModelSelection) -> None:
+    def _record_model_call(
+        self,
+        session: AgentSession,
+        selection: ModelSelection,
+        response: ModelResponse | None = None,
+    ) -> None:
         if self.runtime is not None:
-            self.runtime.record_model_call(session, selection)
+            self.runtime.record_model_call(session, selection, response)
 
     def _allocate_task(self, session: AgentSession, task: str) -> TaskAllocation | None:
         if self.runtime is not None:
@@ -476,7 +481,7 @@ class RunOrchestrator:
                     previous_outputs=outputs,
                 ),
             )
-            self._record_model_call(session, selection)
+            self._record_model_call(session, selection, response)
             payload = {
                 "agent_id": assignment.agent_id,
                 "task_type": assignment.task_type,

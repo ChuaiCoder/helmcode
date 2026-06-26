@@ -7,7 +7,7 @@ from helmcode.agent.session import AgentSession
 from helmcode.context.workspace import Workspace
 from helmcode.core.exceptions import ModelError
 from helmcode.memory.session_store import SessionStore
-from helmcode.models.provider import ProviderAdapter
+from helmcode.models.provider import ModelResponse, ProviderAdapter
 from helmcode.models.quota import ModelSelection, QuotaAwareSelector
 
 
@@ -132,7 +132,13 @@ class AgentRuntime:
             return default_provider
         return self.provider_resolver(model_id)
 
-    def record_model_call(self, session: AgentSession, selection: ModelSelection) -> None:
+    def record_model_call(
+        self,
+        session: AgentSession,
+        selection: ModelSelection,
+        response: ModelResponse | None = None,
+    ) -> None:
+        usage = response.usage if response is not None else {}
         payload = {
             "role": selection.role,
             "task_type": selection.task_type,
@@ -140,10 +146,16 @@ class AgentRuntime:
             "routing_mode": selection.routing_mode,
             "reason": selection.reason,
         }
+        if usage:
+            payload["usage"] = usage
         session.record("model_called", payload)
         self._record(session.session_id, "model_called", payload)
         if self.selector is not None:
-            self.selector.record_call(selection, session_id=session.session_id)
+            self.selector.record_call(
+                selection,
+                session_id=session.session_id,
+                amount=_quota_amount(selection, usage),
+            )
 
     def _record(self, session_id: str, event_type: str, payload: dict[str, object]) -> None:
         if self.session_store is not None:
@@ -159,3 +171,10 @@ class AgentRuntime:
             f"No quota capacity for {selection.role}/{selection.task_type} on "
             f"{selection.model_id} under {policy_text}; resets at {reset_text}"
         )
+
+
+def _quota_amount(selection: ModelSelection, usage: dict[str, int]) -> int:
+    unit = selection.quota_status.unit if selection.quota_status else "request"
+    if unit == "token":
+        return max(usage.get("total_tokens", 0), 1)
+    return 1
