@@ -73,6 +73,31 @@ def test_complex_coding_task_uses_multi_agent_quota_saving_path(tmp_path: Path) 
     assert allocation.strategy == "full multi-agent path with cheap context preparation"
 
 
+def test_budget_cap_removes_optional_agents_before_blocking(tmp_path: Path) -> None:
+    allocation = _allocator(_config(), tmp_path).allocate(
+        "refactor the whole project architecture and implement a large routing change",
+        max_cost_score=8,
+    )
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == [
+        "scout",
+        "summarizer",
+        "planner",
+        "coder",
+    ]
+    assert allocation.selected_cost_score == 8
+    assert allocation.budget_exceeded is False
+    assert any(warning.startswith("skipped:reviewer:budget cap 8") for warning in allocation.warnings)
+
+
+def test_budget_cap_blocks_when_required_path_still_exceeds_budget(tmp_path: Path) -> None:
+    allocation = _allocator(_config(), tmp_path).allocate("add a small helper", max_cost_score=3)
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == ["planner", "coder"]
+    assert allocation.selected_cost_score == 6
+    assert allocation.budget_exceeded is True
+
+
 def test_simple_coding_task_uses_direct_path(tmp_path: Path) -> None:
     allocation = _allocator(_config(), tmp_path).allocate("add a small helper")
 

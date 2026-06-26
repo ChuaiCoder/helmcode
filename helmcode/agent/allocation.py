@@ -262,6 +262,7 @@ class CodingPlanTaskAllocator:
             reserved_records.append(self._reservation_for(agent, selection))
 
         baseline_cost = self._baseline_cost(agent_ids)
+        assignments = self._apply_budget_cap(assignments, warnings, max_cost_score)
         selected_cost = sum(assignment.estimated_cost_score for assignment in assignments)
         return TaskAllocation(
             task=task,
@@ -362,6 +363,38 @@ class CodingPlanTaskAllocator:
             ),
             quota_resets_at=resets_at,
         )
+
+    def _apply_budget_cap(
+        self,
+        assignments: list[AgentAssignment],
+        warnings: list[str],
+        max_cost_score: int | None,
+    ) -> list[AgentAssignment]:
+        if max_cost_score is None:
+            return assignments
+        selected_cost = sum(assignment.estimated_cost_score for assignment in assignments)
+        if selected_cost <= max_cost_score:
+            return assignments
+        kept = list(assignments)
+        profiles_by_id = {profile.id: profile for profile in self.agent_profiles}
+        removable = sorted(
+            [assignment for assignment in kept if not assignment.required],
+            key=lambda assignment: (
+                assignment.estimated_cost_score,
+                profiles_by_id[assignment.agent_id].order if assignment.agent_id in profiles_by_id else 0,
+            ),
+            reverse=True,
+        )
+        for assignment in removable:
+            if selected_cost <= max_cost_score:
+                break
+            kept.remove(assignment)
+            selected_cost -= assignment.estimated_cost_score
+            warnings.append(
+                f"skipped:{assignment.agent_id}:budget cap {max_cost_score} "
+                f"removed optional agent costing {assignment.estimated_cost_score}"
+            )
+        return kept
 
     def _reservation_for(self, agent: AgentProfile, selection: ModelSelection) -> ModelCallRecord:
         unit = selection.quota_status.unit if selection.quota_status else "request"

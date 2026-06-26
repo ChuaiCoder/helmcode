@@ -177,10 +177,12 @@ commands to control the session:
 `helmcode plan` also records the Coding Plan allocation for observability, but it does not block on exhausted downstream coding quota. That keeps planning useful when you want to inspect the intended path before deciding whether to free quota, switch models, or wait for reset.
 
 Use `--max-cost-score <n>` on `helmcode plan` or `helmcode run` to enforce a
-per-task Coding Plan budget. The runtime records the allocation and then blocks
-before any provider call if the selected multi-agent path exceeds the budget.
-In interactive sessions, `/budget <n>` applies the same cap to `/agents`,
-`/plan`, `/run`, and bare prompts.
+per-task Coding Plan budget. The allocator first removes optional agents such as
+`reviewer`, `summarizer`, or `scout` when that can fit the task under budget. If
+the required planner/coder path still exceeds the cap, the runtime records the
+allocation and blocks before any provider call. In interactive sessions,
+`/budget <n>` applies the same cap to `/agents`, `/plan`, `/run`, and bare
+prompts.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to
@@ -251,7 +253,8 @@ only one local request remains, the later optional agent is skipped or the later
 required agent blocks the plan before any provider call is made. Assignment JSON
 and the table output include projected remaining quota after each allocated
 call. Pass `--max-cost-score` to `helmcode agents plan` to preview whether a
-task would exceed a budget without calling a provider.
+task would fit a budget after optional-agent downgrades, without calling a
+provider.
 
 When allocation includes `scout` or `summarizer`, `helmcode plan` and
 `helmcode run` execute those pre-plan agents with the selected fast model before
