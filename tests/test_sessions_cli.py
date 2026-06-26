@@ -107,10 +107,84 @@ def test_sessions_replay_json_outputs_ordered_events(tmp_path: Path) -> None:
 def test_sessions_diff_json_compares_two_sessions(tmp_path: Path) -> None:
     store = SessionStore(tmp_path, enable_structured_logging=False)
     store.record("session-a", "user_message", {"content": "add tests"})
-    store.record("session-a", "model_called", {"model_id": "main:planner"})
+    store.record(
+        "session-a",
+        "model_called",
+        {
+            "model_id": "main:planner",
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+                "cached_tokens": 50,
+            },
+        },
+    )
+    store.record(
+        "session-a",
+        "task_allocated",
+        {
+            "baseline_cost_score": 8,
+            "selected_cost_score": 4,
+            "estimated_savings_score": 4,
+            "assignments": [
+                {
+                    "context_token_estimate": 100,
+                    "quota_reservations": [{"unit": "token", "reserved_amount": 2000}],
+                }
+            ],
+        },
+    )
     store.record("session-b", "user_message", {"content": "add tests and patch"})
-    store.record("session-b", "model_called", {"model_id": "main:planner"})
-    store.record("session-b", "model_called", {"model_id": "main:coder"})
+    store.record(
+        "session-b",
+        "model_called",
+        {
+            "model_id": "main:planner",
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+                "cached_tokens": 50,
+            },
+        },
+    )
+    store.record(
+        "session-b",
+        "model_called",
+        {
+            "model_id": "main:coder",
+            "usage": {
+                "prompt_tokens": 200,
+                "completion_tokens": 80,
+                "total_tokens": 280,
+                "cached_tokens": 20,
+                "cache_miss_tokens": 180,
+            },
+        },
+    )
+    store.record(
+        "session-b",
+        "task_allocated",
+        {
+            "baseline_cost_score": 12,
+            "selected_cost_score": 7,
+            "estimated_savings_score": 5,
+            "budget_exceeded": True,
+            "blocked": True,
+            "assignments": [
+                {
+                    "context_token_estimate": 100,
+                    "quota_reservations": [{"unit": "token", "reserved_amount": 2500}],
+                },
+                {
+                    "context_token_estimate": 100,
+                    "quota_unit": "token",
+                    "quota_reserved_amount": 4200,
+                },
+            ],
+        },
+    )
     store.record("session-b", "patch_created", {"files": ["app.py"]})
 
     result = CliRunner().invoke(
@@ -124,6 +198,14 @@ def test_sessions_diff_json_compares_two_sessions(tmp_path: Path) -> None:
     assert payload["event_type_delta"]["patch_created"] == 1
     assert payload["model_calls_added"] == ["main:coder"]
     assert payload["patch_files_added"] == ["app.py"]
+    assert payload["token_delta"]["model_total_tokens"] == 280
+    assert payload["token_delta"]["model_cached_tokens"] == 20
+    assert payload["token_delta"]["model_cache_miss_tokens"] == 180
+    assert payload["coding_plan_cost_delta"]["coding_plan_selected_cost_score"] == 3
+    assert payload["coding_plan_cost_delta"]["coding_plan_estimated_savings_score"] == 1
+    assert payload["coding_plan_cost_delta"]["coding_plan_context_token_estimate"] == 100
+    assert payload["coding_plan_cost_delta"]["coding_plan_quota_token_reserved"] == 4700
+    assert payload["coding_plan_cost_delta"]["coding_plan_budget_exceeded_count"] == 1
 
 
 def test_sessions_prune_json_deletes_old_sessions(tmp_path: Path) -> None:

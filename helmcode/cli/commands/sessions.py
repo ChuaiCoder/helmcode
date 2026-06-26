@@ -158,6 +158,30 @@ def build_session_diff(
         "patch_files_added": [
             file_path for file_path in right["patch_files"] if file_path not in left["patch_files"]
         ],
+        "token_delta": _numeric_delta(
+            left,
+            right,
+            [
+                "model_prompt_tokens",
+                "model_completion_tokens",
+                "model_total_tokens",
+                "model_cached_tokens",
+                "model_cache_miss_tokens",
+            ],
+        ),
+        "coding_plan_cost_delta": _numeric_delta(
+            left,
+            right,
+            [
+                "coding_plan_baseline_cost_score",
+                "coding_plan_selected_cost_score",
+                "coding_plan_estimated_savings_score",
+                "coding_plan_context_token_estimate",
+                "coding_plan_quota_token_reserved",
+                "coding_plan_budget_exceeded_count",
+                "coding_plan_blocked_count",
+            ],
+        ),
     }
 
 
@@ -206,6 +230,30 @@ def _print_diff(diff: dict[str, Any]) -> None:
         str(len(left["patch_files"])),
         str(len(right["patch_files"])),
         str(len(right["patch_files"]) - len(left["patch_files"])),
+    )
+    summary.add_row(
+        "Model tokens",
+        str(left["model_total_tokens"]),
+        str(right["model_total_tokens"]),
+        str(diff["token_delta"]["model_total_tokens"]),
+    )
+    summary.add_row(
+        "Cached tokens",
+        str(left["model_cached_tokens"]),
+        str(right["model_cached_tokens"]),
+        str(diff["token_delta"]["model_cached_tokens"]),
+    )
+    summary.add_row(
+        "Coding Plan cost",
+        str(left["coding_plan_selected_cost_score"]),
+        str(right["coding_plan_selected_cost_score"]),
+        str(diff["coding_plan_cost_delta"]["coding_plan_selected_cost_score"]),
+    )
+    summary.add_row(
+        "Coding Plan savings",
+        str(left["coding_plan_estimated_savings_score"]),
+        str(right["coding_plan_estimated_savings_score"]),
+        str(diff["coding_plan_cost_delta"]["coding_plan_estimated_savings_score"]),
     )
     console.print(summary)
 
@@ -289,6 +337,16 @@ def _session_digest(store: SessionStore, session_id: str) -> dict[str, Any]:
         for event in events
         if event.event_type == "command_result" and "ok" in event.payload
     ]
+    model_called = [
+        event.payload
+        for event in events
+        if event.event_type == "model_called"
+    ]
+    allocations = [
+        event.payload
+        for event in events
+        if event.event_type == "task_allocated"
+    ]
     return {
         **summary.to_dict(),
         "event_counts": event_counts,
@@ -297,6 +355,36 @@ def _session_digest(store: SessionStore, session_id: str) -> dict[str, Any]:
         "patch_files": _dedupe(patch_files),
         "command_ok_count": sum(result is True for result in command_results),
         "command_failed_count": sum(result is False for result in command_results),
+        "model_prompt_tokens": sum(_usage_int(payload, "prompt_tokens") for payload in model_called),
+        "model_completion_tokens": sum(_usage_int(payload, "completion_tokens") for payload in model_called),
+        "model_total_tokens": sum(_usage_int(payload, "total_tokens") for payload in model_called),
+        "model_cached_tokens": sum(_usage_int(payload, "cached_tokens") for payload in model_called),
+        "model_cache_miss_tokens": sum(
+            _cache_miss_tokens(payload)
+            for payload in model_called
+        ),
+        "coding_plan_allocation_count": len(allocations),
+        "coding_plan_baseline_cost_score": sum(
+            _payload_int(payload, "baseline_cost_score") for payload in allocations
+        ),
+        "coding_plan_selected_cost_score": sum(
+            _payload_int(payload, "selected_cost_score") for payload in allocations
+        ),
+        "coding_plan_estimated_savings_score": sum(
+            _payload_int(payload, "estimated_savings_score") for payload in allocations
+        ),
+        "coding_plan_context_token_estimate": sum(
+            _allocation_context_tokens(payload) for payload in allocations
+        ),
+        "coding_plan_quota_token_reserved": sum(
+            _allocation_quota_token_reserved(payload) for payload in allocations
+        ),
+        "coding_plan_budget_exceeded_count": sum(
+            payload.get("budget_exceeded") is True for payload in allocations
+        ),
+        "coding_plan_blocked_count": sum(
+            payload.get("blocked") is True for payload in allocations
+        ),
     }
 
 
@@ -318,3 +406,74 @@ def _dedupe(values: list[str]) -> list[str]:
             result.append(value)
             seen.add(value)
     return result
+
+
+def _numeric_delta(left: dict[str, Any], right: dict[str, Any], keys: list[str]) -> dict[str, int]:
+    return {
+        key: int(right.get(key, 0) or 0) - int(left.get(key, 0) or 0)
+        for key in keys
+    }
+
+
+def _payload_int(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _usage_int(payload: dict[str, Any], key: str) -> int:
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return 0
+    return _payload_int(usage, key)
+
+
+def _cache_miss_tokens(payload: dict[str, Any]) -> int:
+    explicit = _usage_int(payload, "cache_miss_tokens")
+    if explicit:
+        return explicit
+    prompt_tokens = _usage_int(payload, "prompt_tokens")
+    cached_tokens = _usage_int(payload, "cached_tokens")
+    return max(prompt_tokens - cached_tokens, 0)
+
+
+def _allocation_context_tokens(allocation: dict[str, Any]) -> int:
+    assignments = allocation.get("assignments")
+    if not isinstance(assignments, list):
+        return 0
+    return sum(
+        _payload_int(assignment, "context_token_estimate")
+        for assignment in assignments
+        if isinstance(assignment, dict)
+    )
+
+
+def _allocation_quota_token_reserved(allocation: dict[str, Any]) -> int:
+    assignments = allocation.get("assignments")
+    if not isinstance(assignments, list):
+        return 0
+    total = 0
+    for assignment in assignments:
+        if not isinstance(assignment, dict):
+            continue
+        reservations = assignment.get("quota_reservations")
+        if isinstance(reservations, list):
+            total += sum(
+                _payload_int(reservation, "reserved_amount")
+                for reservation in reservations
+                if isinstance(reservation, dict) and reservation.get("unit") == "token"
+            )
+            continue
+        if assignment.get("quota_unit") == "token":
+            total += _payload_int(assignment, "quota_reserved_amount")
+    return total
