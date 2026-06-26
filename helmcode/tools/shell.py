@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from helmcode.safety.command_policy import CommandPolicy
+from helmcode.safety.permission_store import PermissionStore
 from helmcode.safety.risk import RiskLevel
 from helmcode.tools.base import Tool, ToolResult
 
@@ -29,7 +30,12 @@ class ShellTool(Tool):
     def run(self, raw_input: dict[str, object]) -> ToolResult:
         params = self.validate_input(raw_input)
         assert isinstance(params, ShellInput)
-        decision = self.policy.check(params.command, permission_mode=params.permission_mode)
+        allowed_prefixes = PermissionStore.for_workspace(params.root_path).allowed_commands
+        decision = self.policy.check(
+            params.command,
+            permission_mode=params.permission_mode,
+            allowed_prefixes=allowed_prefixes,
+        )
         if not decision.allowed:
             return ToolResult(
                 ok=False,

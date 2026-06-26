@@ -294,6 +294,40 @@ def test_keys_command_shows_provider_status(monkeypatch, tmp_path: Path) -> None
     ]
 
 
+def test_permissions_command_routes_subcommands(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path, yes=True)
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def record_list(**kwargs):
+        calls.append(("list", kwargs))
+
+    def record_add(**kwargs):
+        calls.append(("add", kwargs))
+
+    def record_remove(**kwargs):
+        calls.append(("remove", kwargs))
+
+    def record_clear(**kwargs):
+        calls.append(("clear", kwargs))
+
+    monkeypatch.setattr(chat.permissions, "list_permissions", record_list)
+    monkeypatch.setattr(chat.permissions, "add_permission", record_add)
+    monkeypatch.setattr(chat.permissions, "remove_permission", record_remove)
+    monkeypatch.setattr(chat.permissions, "clear_permissions", record_clear)
+
+    assert chat.handle_interactive_line("/permissions", state) is True
+    assert chat.handle_interactive_line("/permissions add git push", state) is True
+    assert chat.handle_interactive_line("/permissions remove git push", state) is True
+    assert chat.handle_interactive_line("/permissions clear", state) is True
+
+    assert calls == [
+        ("list", {"workspace": tmp_path, "output_json": False}),
+        ("add", {"command_prefix": "git push", "workspace": tmp_path, "yes": True, "output_json": False}),
+        ("remove", {"command_prefix": "git push", "workspace": tmp_path, "yes": True, "output_json": False}),
+        ("clear", {"workspace": tmp_path, "yes": True, "output_json": False}),
+    ]
+
+
 def test_commit_command_creates_local_commit(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path, yes=True)
     calls: list[dict[str, object]] = []

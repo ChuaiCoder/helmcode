@@ -141,6 +141,9 @@ helmcode agents plan --json "refactor the routing layer and add tests"
 helmcode quota
 helmcode quota history --limit 20
 helmcode quota reset --unit token --yes
+helmcode permissions
+helmcode permissions add "git push" --yes
+helmcode permissions remove "git push" --yes
 helmcode checkpoint create "before risky refactor"
 helmcode checkpoint restore <checkpoint-id> --dry-run
 helmcode restore <checkpoint-id> --yes
@@ -209,6 +212,7 @@ commands to control the session:
 /models                       show configured roles and profiles
 /keys                         show provider key readiness without printing secrets
 /quota [history|reset]        show or manage local quota estimates
+/permissions [list|add|remove|clear] manage workspace shell permissions
 /index                        show local file index status
 /changed                      show files changed since index build
 /skills                       list built-in and project skills
@@ -350,6 +354,13 @@ helmcode tools run read_file --param path=README.md --param end_line=40
 helmcode tools run shell --param "command=pytest -q" --permission edit
 ```
 
+`helmcode permissions` manages workspace-level shell command prefixes stored in
+`.helmcode/permissions.json`. These permissions let known commands that would
+otherwise require confirmation, such as `git push`, run through the shell tool
+when explicitly allowed for the workspace. Destructive block patterns such as
+`git reset --hard`, recursive delete, or database drop commands are still
+blocked even if a matching prefix is present.
+
 `helmcode mcp` manages MCP server configuration for future external tool
 runtime integration. This is configuration and validation only; it does not
 pretend to call MCP tools yet:
@@ -466,6 +477,9 @@ agent_profiles:
 ## Safety Limits
 
 The command policy blocks destructive commands such as `rm -rf`, `sudo`, recursive ownership or permission changes, `curl | sh`, `git reset --hard`, `git clean -fd`, `docker system prune`, `kubectl delete`, `terraform apply`, and database `drop` or `truncate` patterns.
+
+Workspace permissions can allow explicitly trusted command prefixes that would
+otherwise require confirmation, but they do not override destructive blocks.
 
 Sensitive files such as `.env`, private keys, credentials, secrets, tokens, and cloud credentials are not read by default.
 

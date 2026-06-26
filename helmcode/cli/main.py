@@ -25,6 +25,7 @@ from helmcode.cli.commands import (
     keys,
     mcp,
     models,
+    permissions,
     plan,
     quota,
     retry,
@@ -54,6 +55,7 @@ app.add_typer(skills.app, name="skills")
 app.add_typer(tools.app, name="tools")
 app.add_typer(mcp.app, name="mcp")
 app.add_typer(quota.app, name="quota")
+app.add_typer(permissions.app, name="permissions")
 
 
 @app.callback(invoke_without_command=True)

@@ -26,6 +26,7 @@ from helmcode.cli.commands import (
     keys,
     mcp,
     models,
+    permissions,
     plan,
     quota,
     retry,
@@ -157,6 +158,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/quota":
         _quota(rest, state)
+        return True
+    if command == "/permissions":
+        _permissions(rest, state)
         return True
     if command == "/budget":
         _set_budget(state, rest)
@@ -520,6 +524,7 @@ def _print_help(compact: bool) -> None:
         ("/models", "Show configured roles and model profiles."),
         ("/keys", "Show provider key readiness without printing secrets."),
         ("/quota [history|reset]", "Show or manage local quota estimates."),
+        ("/permissions [list|add|remove|clear]", "Manage workspace shell permissions."),
         ("/session-budget", "Show current cumulative Coding Plan budget usage."),
         ("/index", "Show local file index status."),
         ("/changed", "Show files changed since index build."),
@@ -713,6 +718,41 @@ def _quota(rest: str, state: InteractiveState) -> None:
         console.print("Run `/quota reset yes` to clear the local quota ledger from the interactive session.")
         return
     raise ValueError("/quota supports: history, reset")
+
+
+def _permissions(rest: str, state: InteractiveState) -> None:
+    parts = rest.split(maxsplit=1)
+    if not parts or parts[0] == "list":
+        permissions.list_permissions(workspace=state.workspace_path, output_json=False)
+        return
+    subcommand = parts[0]
+    value = parts[1] if len(parts) == 2 else ""
+    if subcommand == "add":
+        _require_task(value, "/permissions add")
+        permissions.add_permission(
+            command_prefix=value,
+            workspace=state.workspace_path,
+            yes=state.yes,
+            output_json=False,
+        )
+        return
+    if subcommand in {"remove", "rm"}:
+        _require_task(value, "/permissions remove")
+        permissions.remove_permission(
+            command_prefix=value,
+            workspace=state.workspace_path,
+            yes=state.yes,
+            output_json=False,
+        )
+        return
+    if subcommand == "clear":
+        permissions.clear_permissions(
+            workspace=state.workspace_path,
+            yes=state.yes or value in {"yes", "--yes", "-y"},
+            output_json=False,
+        )
+        return
+    raise ValueError("/permissions supports: list, add <command>, remove <command>, clear")
 
 
 def _normalize_mode(value: str) -> str:

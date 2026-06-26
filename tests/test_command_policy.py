@@ -25,6 +25,30 @@ def test_command_policy_requires_confirmation_for_publish() -> None:
     assert "publish" in result.reason
 
 
+def test_command_policy_allows_confirm_command_when_workspace_permission_matches() -> None:
+    result = CommandPolicy().check(
+        "git push origin main",
+        permission_mode="auto",
+        allowed_prefixes=["git push"],
+    )
+
+    assert result.allowed is True
+    assert result.risk == CommandRisk.MEDIUM
+    assert result.requires_confirmation is False
+    assert "workspace permission" in result.reason
+
+
+def test_command_policy_permissions_do_not_override_blocked_patterns() -> None:
+    result = CommandPolicy().check(
+        "git reset --hard",
+        permission_mode="auto",
+        allowed_prefixes=["git reset"],
+    )
+
+    assert result.allowed is False
+    assert result.risk == CommandRisk.BLOCKED
+
+
 def test_command_policy_blocks_database_drop() -> None:
     result = CommandPolicy().check("psql -c 'drop table users'", permission_mode="auto")
 

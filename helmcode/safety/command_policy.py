@@ -73,9 +73,15 @@ class CommandPolicy:
         self.use_ast_analysis = use_ast_analysis
         self.ast_analyzer = ASTCommandAnalyzer() if use_ast_analysis else None
 
-    def check(self, command: str, permission_mode: str = "suggest") -> CommandPolicyResult:
+    def check(
+        self,
+        command: str,
+        permission_mode: str = "suggest",
+        allowed_prefixes: list[str] | None = None,
+    ) -> CommandPolicyResult:
         normalized = command.strip()
         lowered = normalized.lower()
+        allowed_prefixes = allowed_prefixes or []
         if not normalized:
             return CommandPolicyResult(False, CommandRisk.BLOCKED, False, "empty command")
 
@@ -92,6 +98,13 @@ class CommandPolicy:
         for pattern in self.CONFIRM_PATTERNS:
             match = re.search(pattern, lowered)
             if match:
+                if _matches_allowed_prefix(normalized, allowed_prefixes):
+                    return CommandPolicyResult(
+                        allowed=True,
+                        risk=CommandRisk.MEDIUM,
+                        requires_confirmation=False,
+                        reason="allowed by workspace permission",
+                    )
                 return CommandPolicyResult(
                     allowed=False,
                     risk=CommandRisk.HIGH,
@@ -110,7 +123,11 @@ class CommandPolicy:
                     reason=f"AST analysis detected: {', '.join(ast_result.reasons)}",
                 )
 
-        if permission_mode == "read_only" and not self._is_read_only(normalized):
+        if (
+            permission_mode == "read_only"
+            and not self._is_read_only(normalized)
+            and not _matches_allowed_prefix(normalized, allowed_prefixes)
+        ):
             return CommandPolicyResult(
                 allowed=False,
                 risk=CommandRisk.MEDIUM,
@@ -140,3 +157,14 @@ class CommandPolicy:
         if head in {"npm", "pnpm", "yarn"}:
             return "test" in parts or "lint" in parts or "typecheck" in parts
         return head in {"pytest", "python", "python3", "rg", "ls", "dir", "go", "cargo", "mvn", "gradle", "uv"}
+
+
+def _matches_allowed_prefix(command: str, allowed_prefixes: list[str]) -> bool:
+    lowered = command.lower()
+    for prefix in allowed_prefixes:
+        normalized_prefix = " ".join(prefix.strip().split()).lower()
+        if not normalized_prefix:
+            continue
+        if lowered == normalized_prefix or lowered.startswith(normalized_prefix + " "):
+            return True
+    return False
