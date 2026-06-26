@@ -22,6 +22,7 @@ from helmcode.cli.commands import (
     run,
     sessions,
     skills,
+    tools,
 )
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
@@ -152,6 +153,19 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/skill-match":
         _require_task(rest, "/skill-match")
         skills.match_skills(task=rest, workspace=state.workspace_path)
+        return True
+    if command == "/tools":
+        tools.list_tools()
+        return True
+    if command == "/tool":
+        parts = rest.split(maxsplit=1)
+        if not parts:
+            raise ValueError("/tool requires a tool name")
+        tools.run_tool(
+            tool_name=parts[0],
+            input_json=parts[1] if len(parts) == 2 else "{}",
+            workspace=state.workspace_path,
+        )
         return True
     if command == "/checkpoint":
         checkpoints.create_checkpoint(label=rest, workspace=state.workspace_path)
@@ -313,6 +327,8 @@ def _print_help(compact: bool) -> None:
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),
+        ("/tools", "List local tools."),
+        ("/tool <name> <json>", "Run a local tool."),
         ("/checkpoint [label]", "Create a local workspace checkpoint."),
         ("/checkpoints", "List local checkpoints."),
         ("/restore <id>", "Restore a checkpoint after confirmation."),

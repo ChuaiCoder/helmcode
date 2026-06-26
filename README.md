@@ -107,6 +107,8 @@ helmcode index build
 helmcode index changed
 helmcode skills list
 helmcode skills match "optimize codingplan quota routing"
+helmcode tools list
+helmcode tools run read_file --param path=README.md
 helmcode sessions
 helmcode events
 helmcode stats
@@ -144,6 +146,8 @@ commands to control the session:
 /changed                      show files changed since index build
 /skills                       list built-in and project skills
 /skill-match <task>           show skills matched for a task
+/tools                        list local tools
+/tool <name> <json>           run a local tool
 /sessions                     show recent local sessions
 /events [session]             show recent audit events
 /replay <session>             replay one session timeline
@@ -187,6 +191,15 @@ helmcode skills add api-review \
   --description "API review guidance" \
   --instructions "Check compatibility, callers, tests, and response contracts."
 helmcode skills match "change api response"
+```
+
+`helmcode tools` exposes the local tool registry used by the agent. Tool runs
+are recorded in the local session audit log:
+
+```bash
+helmcode tools list
+helmcode tools run read_file --param path=README.md --param end_line=40
+helmcode tools run shell --param "command=pytest -q" --permission edit
 ```
 
 `helmcode agents plan` is a local Coding Plan allocation planner. It does not

@@ -104,6 +104,26 @@ def test_agents_command_builds_allocation(monkeypatch, tmp_path: Path) -> None:
     assert isinstance(printed[0], FakeAllocation)
 
 
+def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_run_tool(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.tools, "run_tool", record_run_tool)
+
+    assert chat.handle_interactive_line('/tool read_file {"path":"README.md"}', state) is True
+
+    assert calls == [
+        {
+            "tool_name": "read_file",
+            "input_json": '{"path":"README.md"}',
+            "workspace": tmp_path,
+        }
+    ]
+
+
 def test_exit_command_stops_session(tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
 
