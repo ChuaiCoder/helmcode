@@ -165,6 +165,8 @@ def print_allocation_json(allocation: TaskAllocation) -> None:
 
 
 def _quota_text(assignment: AgentAssignment) -> str:
+    if assignment.quota_reservations and len(assignment.quota_reservations) > 1:
+        return "; ".join(_quota_reservation_text(reservation) for reservation in assignment.quota_reservations)
     if assignment.quota_policy_id is None:
         return "unmetered"
     if assignment.quota_remaining is None:
@@ -177,4 +179,24 @@ def _quota_text(assignment: AgentAssignment) -> str:
         text += f", {assignment.quota_remaining_after} after allocation"
     if assignment.quota_resets_at:
         text += f", resets {assignment.quota_resets_at}"
+    return text
+
+
+def _quota_reservation_text(reservation: dict[str, object]) -> str:
+    policy_id = str(reservation["policy_id"])
+    unit = str(reservation["unit"])
+    remaining = reservation.get("remaining")
+    reserved_amount = int(reservation.get("reserved_amount") or 1)
+    remaining_after = reservation.get("remaining_after")
+    resets_at = reservation.get("resets_at")
+    if remaining is None:
+        text = f"{policy_id}/{unit}"
+    else:
+        text = f"{policy_id}/{unit}: {remaining} left"
+    if reserved_amount != 1:
+        text += f", reserves {reserved_amount} {unit}"
+    if remaining_after is not None:
+        text += f", {remaining_after} after allocation"
+    if resets_at:
+        text += f", resets {resets_at}"
     return text

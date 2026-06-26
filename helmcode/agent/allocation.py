@@ -21,6 +21,7 @@ from helmcode.models.quota import (
     TASK_SUMMARIZE,
     ModelCallRecord,
     ModelSelection,
+    QuotaPolicyStatus,
     QuotaAwareSelector,
     classify_task,
 )
@@ -74,6 +75,7 @@ class AgentAssignment:
     quota_remaining: int | None = None
     quota_remaining_after: int | None = None
     quota_resets_at: str | None = None
+    quota_reservations: list[dict[str, object]] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -92,6 +94,7 @@ class AgentAssignment:
             "quota_remaining": self.quota_remaining,
             "quota_remaining_after": self.quota_remaining_after,
             "quota_resets_at": self.quota_resets_at,
+            "quota_reservations": self.quota_reservations or [],
         }
 
 
@@ -272,7 +275,7 @@ class CodingPlanTaskAllocator:
         triggered_agent_ids = self._triggered_agent_ids(task)
         agent_ids = self._merge_triggered_agent_ids(agent_ids, triggered_agent_ids)
         assignments: list[AgentAssignment] = []
-        reservations: list[ModelCallRecord] = []
+        reservation_groups: list[list[ModelCallRecord]] = []
         warnings: list[str] = []
         coding_model: str | None = None
 
@@ -287,7 +290,7 @@ class CodingPlanTaskAllocator:
                         fallback_model_id=fallback_model_id,
                         override_model_id=override_model_id,
                         prefer_different_from=coding_model if agent.id == "reviewer" else None,
-                        reserved_records=reservations,
+                        reserved_records=_flatten_reservations(reservation_groups),
                     )
                 except ModelError as exc:
                     message = str(exc)
@@ -296,7 +299,7 @@ class CodingPlanTaskAllocator:
                         and _looks_like_capacity_issue(message)
                         and self._release_optional_reservation(
                             assignments,
-                            reservations,
+                            reservation_groups,
                             warnings,
                             agent,
                             message,
@@ -315,7 +318,7 @@ class CodingPlanTaskAllocator:
                         and _looks_like_capacity_issue(message)
                         and self._release_optional_reservation(
                             assignments,
-                            reservations,
+                            reservation_groups,
                             warnings,
                             agent,
                             message,
@@ -342,7 +345,7 @@ class CodingPlanTaskAllocator:
                     coding_model = selection.model_id
                 assignment = self._assignment(agent, selection)
                 assignments.append(assignment)
-                reservations.append(self._reservation_for(agent, selection))
+                reservation_groups.append(self._reservations_for(agent, selection))
                 break
 
         baseline_model_id = self._baseline_model()
@@ -436,8 +439,8 @@ class CodingPlanTaskAllocator:
 
     def _assignment(self, agent: AgentProfile, selection: ModelSelection) -> AgentAssignment:
         quota_status = selection.quota_status
-        resets_at = quota_status.next_restore_at.isoformat() if quota_status and quota_status.next_restore_at else None
-        reserved_amount = self._reservation_amount(agent, selection)
+        quota_reservations = self._quota_reservation_details(agent, selection)
+        primary_quota = quota_reservations[0] if quota_reservations else None
         return AgentAssignment(
             agent_id=agent.id,
             role=agent.role,
@@ -448,15 +451,21 @@ class CodingPlanTaskAllocator:
             required=agent.required,
             estimated_cost_score=self._cost_for_model(selection.model_id),
             model_cost_tier=self._tier_for_model(selection.model_id),
-            quota_policy_id=quota_status.policy_id if quota_status else None,
-            quota_unit=quota_status.unit if quota_status else None,
-            quota_reserved_amount=reserved_amount,
-            quota_remaining=quota_status.tightest_remaining if quota_status else None,
-            quota_remaining_after=_remaining_after_reservation(
-                quota_status.tightest_remaining if quota_status else None,
-                reserved_amount,
+            quota_policy_id=str(primary_quota["policy_id"]) if primary_quota else None,
+            quota_unit=str(primary_quota["unit"]) if primary_quota else (quota_status.unit if quota_status else None),
+            quota_reserved_amount=int(primary_quota["reserved_amount"]) if primary_quota else 1,
+            quota_remaining=(
+                int(primary_quota["remaining"])
+                if primary_quota and primary_quota["remaining"] is not None
+                else None
             ),
-            quota_resets_at=resets_at,
+            quota_remaining_after=(
+                int(primary_quota["remaining_after"])
+                if primary_quota and primary_quota["remaining_after"] is not None
+                else None
+            ),
+            quota_resets_at=str(primary_quota["resets_at"]) if primary_quota and primary_quota["resets_at"] else None,
+            quota_reservations=quota_reservations,
         )
 
     def _apply_budget_cap(
@@ -494,7 +503,7 @@ class CodingPlanTaskAllocator:
     def _release_optional_reservation(
         self,
         assignments: list[AgentAssignment],
-        reservations: list[ModelCallRecord],
+        reservation_groups: list[list[ModelCallRecord]],
         warnings: list[str],
         required_agent: AgentProfile,
         reason: str,
@@ -504,10 +513,13 @@ class CodingPlanTaskAllocator:
             assignment = assignments[index]
             if assignment.required:
                 continue
-            if selection is not None and not self._reservation_affects_selection(reservations[index], selection):
+            if selection is not None and not any(
+                self._reservation_affects_selection(reservation, selection)
+                for reservation in reservation_groups[index]
+            ):
                 continue
             assignments.pop(index)
-            reservations.pop(index)
+            reservation_groups.pop(index)
             warnings.append(
                 f"skipped:{assignment.agent_id}:released optional reservation for required "
                 f"{required_agent.id}: {reason}"
@@ -517,41 +529,63 @@ class CodingPlanTaskAllocator:
 
     def _reservation_affects_selection(self, reservation: ModelCallRecord, selection: ModelSelection) -> bool:
         status = selection.quota_status
-        if status is None:
+        if status is None or not status.metered:
             return reservation.model_id == selection.model_id
-        if reservation.unit != status.unit:
+        if reservation.unit not in status.metered_units:
             return False
-        policy = next((policy for policy in self.config.quota_policies if policy.id == status.policy_id), None)
-        if policy is None:
+        policy_ids = {
+            policy_status.policy_id
+            for policy_status in status.policy_statuses
+            if policy_status.unit == reservation.unit
+        }
+        policies = [policy for policy in self.config.quota_policies if policy.id in policy_ids]
+        if not policies:
             return reservation.model_id == selection.model_id
-        return any(fnmatch.fnmatch(reservation.model_id, pattern) for pattern in policy.model_patterns)
-
-    def _reservation_for(self, agent: AgentProfile, selection: ModelSelection) -> ModelCallRecord:
-        unit = selection.quota_status.unit if selection.quota_status else "request"
-        return ModelCallRecord(
-            timestamp=datetime.now(UTC),
-            model_id=selection.model_id,
-            role=agent.role,
-            task_type=agent.task_type,
-            unit=unit,
-            amount=self._reservation_amount(agent, selection),
-            reason="allocation reservation",
+        return any(
+            fnmatch.fnmatch(reservation.model_id, pattern)
+            for policy in policies
+            for pattern in policy.model_patterns
         )
+
+    def _reservations_for(self, agent: AgentProfile, selection: ModelSelection) -> list[ModelCallRecord]:
+        status = selection.quota_status
+        units = status.metered_units if status and status.metered else ["request"]
+        return [
+            ModelCallRecord(
+                timestamp=datetime.now(UTC),
+                model_id=selection.model_id,
+                role=agent.role,
+                task_type=agent.task_type,
+                unit=unit,
+                amount=self._reservation_amount_for_unit(agent, unit),
+                reason=f"allocation reservation:{agent.id}",
+            )
+            for unit in units
+        ]
 
     def _selection_has_capacity_for(self, agent: AgentProfile, selection: ModelSelection) -> bool:
         status = selection.quota_status
         if status is None:
             return True
-        if not status.available:
-            return False
-        remaining = status.tightest_remaining
-        if remaining is None:
-            return True
-        return remaining >= self._reservation_amount(agent, selection)
+        for policy_status in _quota_policy_statuses(status):
+            if not policy_status.available:
+                return False
+            remaining = policy_status.tightest_remaining
+            if remaining is not None and remaining < self._reservation_amount_for_unit(agent, policy_status.unit):
+                return False
+        return True
 
     def _reservation_amount(self, agent: AgentProfile, selection: ModelSelection) -> int:
+        policy_statuses = _quota_policy_statuses(selection.quota_status)
+        if policy_statuses:
+            return self._reservation_amount_for_unit(agent, policy_statuses[0].unit)
         status = selection.quota_status
-        if status is not None and status.unit == "token":
+        if status is not None:
+            return self._reservation_amount_for_unit(agent, status.unit)
+        return 1
+
+    def _reservation_amount_for_unit(self, agent: AgentProfile, unit: str) -> int:
+        if unit == "token":
             return max(agent.estimated_tokens, 1)
         return 1
 
@@ -580,16 +614,51 @@ class CodingPlanTaskAllocator:
         status = selection.quota_status
         if status is None:
             return f"{selection.model_id} has no quota capacity"
-        required_amount = self._reservation_amount(agent, selection)
-        remaining = status.tightest_remaining
-        if status.available and remaining is not None and remaining < required_amount:
-            return (
-                f"{selection.model_id} has insufficient quota capacity under {status.policy_id}; "
-                f"needs estimated {required_amount} {status.unit}, remaining {remaining}"
-            )
+        for policy_status in _quota_policy_statuses(status):
+            required_amount = self._reservation_amount_for_unit(agent, policy_status.unit)
+            remaining = policy_status.tightest_remaining
+            if policy_status.available and remaining is not None and remaining < required_amount:
+                return (
+                    f"{selection.model_id} has insufficient quota capacity under {policy_status.policy_id}; "
+                    f"needs estimated {required_amount} {policy_status.unit}, remaining {remaining}"
+                )
+            if not policy_status.available:
+                reset_text = (
+                    policy_status.next_restore_at.isoformat()
+                    if policy_status.next_restore_at
+                    else "unknown reset time"
+                )
+                return (
+                    f"{selection.model_id} has no quota capacity under "
+                    f"{policy_status.policy_id}; resets at {reset_text}"
+                )
         reset_text = status.next_restore_at.isoformat() if status.next_restore_at else "unknown reset time"
         policy_text = status.policy_id or "unscoped quota policy"
         return f"{selection.model_id} has no quota capacity under {policy_text}; resets at {reset_text}"
+
+    def _quota_reservation_details(self, agent: AgentProfile, selection: ModelSelection) -> list[dict[str, object]]:
+        status = selection.quota_status
+        if status is None:
+            return []
+        details: list[dict[str, object]] = []
+        for policy_status in _quota_policy_statuses(status):
+            reserved_amount = self._reservation_amount_for_unit(agent, policy_status.unit)
+            remaining = policy_status.tightest_remaining
+            details.append(
+                {
+                    "policy_id": policy_status.policy_id,
+                    "unit": policy_status.unit,
+                    "reserved_amount": reserved_amount,
+                    "remaining": remaining,
+                    "remaining_after": _remaining_after_reservation(remaining, reserved_amount),
+                    "resets_at": (
+                        policy_status.next_restore_at.isoformat()
+                        if policy_status.next_restore_at
+                        else None
+                    ),
+                }
+            )
+        return details
 
     def _strategy(self, task_type: str, complexity: str) -> str:
         if task_type in {TASK_REPO_SCAN, TASK_SUMMARIZE, TASK_REVIEW}:
@@ -703,6 +772,16 @@ def _remaining_after_reservation(remaining: int | None, amount: int = 1) -> int 
     if remaining is None:
         return None
     return max(remaining - amount, 0)
+
+
+def _quota_policy_statuses(status) -> list[QuotaPolicyStatus]:
+    if status is None:
+        return []
+    return list(status.policy_statuses)
+
+
+def _flatten_reservations(reservation_groups: list[list[ModelCallRecord]]) -> list[ModelCallRecord]:
+    return [reservation for group in reservation_groups for reservation in group]
 
 
 def _looks_like_capacity_issue(message: str) -> bool:

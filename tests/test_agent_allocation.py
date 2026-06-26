@@ -267,6 +267,72 @@ def test_token_quota_reserves_estimated_agent_tokens(tmp_path: Path) -> None:
     assert planner.quota_remaining_after == 500
 
 
+def test_allocation_reserves_request_and_token_quota_for_same_agent(tmp_path: Path) -> None:
+    config = _config()
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="planning_requests",
+            model_patterns=["main:planner"],
+            unit="request",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=2)],
+        ),
+        QuotaPolicyConfig(
+            id="planning_tokens",
+            model_patterns=["main:planner"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=3_000)],
+        ),
+    ]
+    allocation = _allocator(config, tmp_path).allocate("plan repository architecture")
+
+    planner = next(assignment for assignment in allocation.assignments if assignment.agent_id == "planner")
+    assert planner.quota_policy_id == "planning_requests"
+    assert planner.quota_reservations == [
+        {
+            "policy_id": "planning_requests",
+            "unit": "request",
+            "reserved_amount": 1,
+            "remaining": 2,
+            "remaining_after": 1,
+            "resets_at": None,
+        },
+        {
+            "policy_id": "planning_tokens",
+            "unit": "token",
+            "reserved_amount": 2_500,
+            "remaining": 3_000,
+            "remaining_after": 500,
+            "resets_at": None,
+        },
+    ]
+
+
+def test_allocation_blocks_when_second_matching_policy_lacks_capacity(tmp_path: Path) -> None:
+    config = _config()
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="planning_requests",
+            model_patterns=["main:planner"],
+            unit="request",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=2)],
+        ),
+        QuotaPolicyConfig(
+            id="planning_tokens",
+            model_patterns=["main:planner"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=2_000)],
+        ),
+    ]
+    allocation = _allocator(config, tmp_path).allocate("plan repository architecture")
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == ["scout"]
+    assert any(
+        "blocked:planner:main:planner has insufficient quota capacity under planning_tokens" in warning
+        for warning in allocation.warnings
+    )
+    assert allocation.blocked is True
+
+
 def test_token_quota_blocks_when_estimated_agent_tokens_exceed_remaining(tmp_path: Path) -> None:
     config = _config()
     config.quota_policies = [

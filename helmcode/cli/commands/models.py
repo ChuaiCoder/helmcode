@@ -81,11 +81,7 @@ def model_status(workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w")
     table.add_column("Unit")
     table.add_column("Windows")
     for status in selector.status_for_configured_models():
-        windows = "; ".join(
-            f"{window.name}: used {window.used}/{window.limit}, remaining {window.remaining}"
-            + (f", restores {window.resets_at.isoformat()}" if window.resets_at else "")
-            for window in status.windows
-        )
+        windows = _quota_windows_text(status)
         table.add_row(
             status.model_id,
             status.policy_id or "unmetered",
@@ -122,3 +118,19 @@ def recommend_models(
         agents_command.print_allocation_json(allocation)
         return
     agents_command.print_allocation(allocation)
+
+
+def _quota_windows_text(status) -> str:
+    if status.policy_statuses:
+        return "; ".join(
+            f"{policy.policy_id}/{policy.unit}/{window.name}: "
+            f"used {window.used}/{window.limit}, remaining {window.remaining}"
+            + (f", restores {window.resets_at.isoformat()}" if window.resets_at else "")
+            for policy in status.policy_statuses
+            for window in policy.windows
+        )
+    return "; ".join(
+        f"{window.name}: used {window.used}/{window.limit}, remaining {window.remaining}"
+        + (f", restores {window.resets_at.isoformat()}" if window.resets_at else "")
+        for window in status.windows
+    )

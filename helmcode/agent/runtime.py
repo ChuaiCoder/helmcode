@@ -154,7 +154,7 @@ class AgentRuntime:
             self.selector.record_call(
                 selection,
                 session_id=session.session_id,
-                amount=_quota_amount(selection, usage),
+                amounts_by_unit=_quota_amounts(selection, usage),
             )
 
     def _record(self, session_id: str, event_type: str, payload: dict[str, object]) -> None:
@@ -173,8 +173,14 @@ class AgentRuntime:
         )
 
 
-def _quota_amount(selection: ModelSelection, usage: dict[str, int]) -> int:
-    unit = selection.quota_status.unit if selection.quota_status else "request"
-    if unit == "token":
-        return max(usage.get("total_tokens", 0), 1)
-    return 1
+def _quota_amounts(selection: ModelSelection, usage: dict[str, int]) -> dict[str, int]:
+    units = selection.quota_status.metered_units if selection.quota_status else []
+    if not units:
+        units = ["request"]
+    amounts: dict[str, int] = {}
+    for unit in units:
+        if unit == "token":
+            amounts[unit] = max(usage.get("total_tokens", 0), 1)
+        else:
+            amounts[unit] = 1
+    return amounts

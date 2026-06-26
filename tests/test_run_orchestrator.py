@@ -454,6 +454,12 @@ def test_runner_records_model_usage_and_token_quota_amount(tmp_path: Path) -> No
         },
         quota_policies=[
             QuotaPolicyConfig(
+                id="planning_requests",
+                model_patterns=["fake:planning"],
+                unit="request",
+                windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=10)],
+            ),
+            QuotaPolicyConfig(
                 id="planning_tokens",
                 model_patterns=["fake:planning"],
                 unit="token",
@@ -496,8 +502,7 @@ def test_runner_records_model_usage_and_token_quota_amount(tmp_path: Path) -> No
         "cached_tokens": 25,
     }
     records = ledger.load()
-    assert records[0].unit == "token"
-    assert records[0].amount == 48
+    assert [(record.unit, record.amount) for record in records] == [("request", 1), ("token", 48)]
 
 
 def test_runner_records_coding_plan_allocation_event(tmp_path: Path) -> None:

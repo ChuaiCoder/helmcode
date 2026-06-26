@@ -286,6 +286,13 @@ the estimate per role. The runtime still records real provider `total_tokens`
 after a call, so previews are conservative planning estimates while the ledger
 uses actual usage when available.
 
+Quota checks evaluate every policy that matches the selected model. A manually
+configured model can have both request and token limits, or multiple windows for
+the same unit; Coding Plan allocation must satisfy all of them before assigning
+the agent. Runtime calls record one request unit plus the returned token amount
+when both policy units are present, so later recommendations see the same
+constraints that were actually spent.
+
 Allocation simulates quota reservations inside the proposed multi-agent plan
 without writing to the quota ledger. If two agents would use the same model and
 only one local request remains, optional agents are skipped first; if an earlier

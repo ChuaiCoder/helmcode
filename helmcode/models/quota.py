@@ -138,9 +138,8 @@ class QuotaWindowStatus:
 
 
 @dataclass(slots=True)
-class ModelQuotaStatus:
-    model_id: str
-    policy_id: str | None
+class QuotaPolicyStatus:
+    policy_id: str
     unit: str
     windows: list[QuotaWindowStatus] = field(default_factory=list)
 
@@ -162,6 +161,58 @@ class ModelQuotaStatus:
         return min(restore_times)
 
 
+@dataclass(slots=True)
+class ModelQuotaStatus:
+    model_id: str
+    policy_id: str | None
+    unit: str
+    windows: list[QuotaWindowStatus] = field(default_factory=list)
+    policy_statuses: list[QuotaPolicyStatus] = field(default_factory=list)
+
+    @property
+    def available(self) -> bool:
+        if self.policy_statuses:
+            return all(policy.available for policy in self.policy_statuses)
+        return all(window.available for window in self.windows)
+
+    @property
+    def tightest_remaining(self) -> int | None:
+        if self.policy_statuses:
+            remaining = [
+                policy.tightest_remaining
+                for policy in self.policy_statuses
+                if policy.tightest_remaining is not None
+            ]
+            return min(remaining) if remaining else None
+        if not self.windows:
+            return None
+        return min(window.remaining for window in self.windows)
+
+    @property
+    def next_restore_at(self) -> datetime | None:
+        if self.policy_statuses:
+            restore_times = [
+                policy.next_restore_at
+                for policy in self.policy_statuses
+                if policy.next_restore_at is not None
+            ]
+            return min(restore_times) if restore_times else None
+        restore_times = [window.resets_at for window in self.windows if not window.available and window.resets_at]
+        if not restore_times:
+            return None
+        return min(restore_times)
+
+    @property
+    def metered_units(self) -> list[str]:
+        if not self.policy_statuses:
+            return []
+        return _dedupe([policy.unit for policy in self.policy_statuses])
+
+    @property
+    def metered(self) -> bool:
+        return bool(self.policy_statuses)
+
+
 class QuotaState:
     def __init__(self, policies: list[QuotaPolicyConfig], records: list[ModelCallRecord]) -> None:
         self.policies = policies
@@ -169,30 +220,42 @@ class QuotaState:
 
     def status_for_model(self, model_id: str, now: datetime | None = None) -> ModelQuotaStatus:
         now = (now or datetime.now(UTC)).astimezone(UTC)
-        policy = self._policy_for_model(model_id)
-        if policy is None:
+        policies = self._policies_for_model(model_id)
+        if not policies:
             return ModelQuotaStatus(model_id=model_id, policy_id=None, unit="request", windows=[])
-        matching_records = [
-            record
-            for record in self.records
-            if record.unit == policy.unit and self._model_matches_policy(record.model_id, policy)
-        ]
-        windows = [
-            self._window_status(window, matching_records, now)
-            for window in policy.windows
-        ]
+        policy_statuses: list[QuotaPolicyStatus] = []
+        for policy in policies:
+            matching_records = [
+                record
+                for record in self.records
+                if record.unit == policy.unit and self._model_matches_policy(record.model_id, policy)
+            ]
+            policy_statuses.append(
+                QuotaPolicyStatus(
+                    policy_id=policy.id,
+                    unit=policy.unit,
+                    windows=[
+                        self._window_status(window, matching_records, now)
+                        for window in policy.windows
+                    ],
+                )
+            )
+        windows = [window for policy_status in policy_statuses for window in policy_status.windows]
+        units = _dedupe([policy.unit for policy in policies])
         return ModelQuotaStatus(
             model_id=model_id,
-            policy_id=policy.id,
-            unit=policy.unit,
+            policy_id=", ".join(policy.id for policy in policies),
+            unit=units[0] if len(units) == 1 else ", ".join(units),
             windows=windows,
+            policy_statuses=policy_statuses,
         )
 
     def _policy_for_model(self, model_id: str) -> QuotaPolicyConfig | None:
-        for policy in self.policies:
-            if self._model_matches_policy(model_id, policy):
-                return policy
-        return None
+        policies = self._policies_for_model(model_id)
+        return policies[0] if policies else None
+
+    def _policies_for_model(self, model_id: str) -> list[QuotaPolicyConfig]:
+        return [policy for policy in self.policies if self._model_matches_policy(model_id, policy)]
 
     def _model_matches_policy(self, model_id: str, policy: QuotaPolicyConfig) -> bool:
         return any(fnmatch.fnmatch(model_id, pattern) for pattern in policy.model_patterns)
@@ -303,7 +366,7 @@ class QuotaAwareSelector:
             if status.available:
                 reason = f"selected for {task_type}"
                 if status.policy_id:
-                    reason += f"; quota policy {status.policy_id} has capacity"
+                    reason += f"; quota policies {status.policy_id} have capacity"
                 else:
                     reason += "; no quota policy limits this model"
                 return ModelSelection(
@@ -319,17 +382,26 @@ class QuotaAwareSelector:
         restore_text = _restore_summary(exhausted)
         raise ModelError(f"No quota capacity for {role}/{task_type}. {restore_text}")
 
-    def record_call(self, selection: ModelSelection, session_id: str | None = None, amount: int = 1) -> None:
-        unit = selection.quota_status.unit if selection.quota_status else "request"
-        self.ledger.record(
-            model_id=selection.model_id,
-            role=selection.role,
-            task_type=selection.task_type,
-            unit=unit,
-            amount=amount,
-            session_id=session_id,
-            reason=selection.reason,
-        )
+    def record_call(
+        self,
+        selection: ModelSelection,
+        session_id: str | None = None,
+        amount: int = 1,
+        amounts_by_unit: dict[str, int] | None = None,
+    ) -> None:
+        units = selection.quota_status.metered_units if selection.quota_status else []
+        if not units:
+            units = ["request"]
+        for unit in units:
+            self.ledger.record(
+                model_id=selection.model_id,
+                role=selection.role,
+                task_type=selection.task_type,
+                unit=unit,
+                amount=(amounts_by_unit or {}).get(unit, amount),
+                session_id=session_id,
+                reason=selection.reason,
+            )
 
     def status_for_configured_models(self) -> list[ModelQuotaStatus]:
         model_ids = sorted({*self.config.model_roles.values(), *self.profiles.keys()})

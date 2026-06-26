@@ -82,6 +82,105 @@ def test_fixed_selection_records_configured_quota_unit(tmp_path: Path) -> None:
     assert records[0].unit == "prompt_call"
 
 
+def test_quota_state_combines_multiple_matching_policies() -> None:
+    now = datetime.now(UTC)
+    policies = [
+        QuotaPolicyConfig(
+            id="requests",
+            model_patterns=["main:strong"],
+            unit="request",
+            windows=[QuotaWindowConfig(name="daily", type="calendar_day", limit=2)],
+        ),
+        QuotaPolicyConfig(
+            id="tokens",
+            model_patterns=["main:strong"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="daily", type="calendar_day", limit=100)],
+        ),
+    ]
+    records = [
+        ModelCallRecord(now, "main:strong", "coding", TASK_CODE_PATCH, "request", amount=1),
+        ModelCallRecord(now, "main:strong", "coding", TASK_CODE_PATCH, "token", amount=60),
+    ]
+
+    status = QuotaState(policies, records).status_for_model("main:strong", now=now)
+
+    assert status.policy_id == "requests, tokens"
+    assert status.unit == "request, token"
+    assert status.metered_units == ["request", "token"]
+    assert status.available is True
+    assert [(policy.policy_id, policy.unit, policy.tightest_remaining) for policy in status.policy_statuses] == [
+        ("requests", "request", 1),
+        ("tokens", "token", 40),
+    ]
+
+
+def test_selector_blocks_when_any_matching_policy_is_exhausted(tmp_path: Path) -> None:
+    policies = [
+        QuotaPolicyConfig(
+            id="requests",
+            model_patterns=["main:strong"],
+            unit="request",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=10)],
+        ),
+        QuotaPolicyConfig(
+            id="tokens",
+            model_patterns=["main:strong"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=50)],
+        ),
+    ]
+    config = _config(
+        roles={"default": "main:strong", "coding": "main:strong"},
+        policies=policies,
+    )
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    ledger.record(model_id="main:strong", role="coding", task_type=TASK_CODE_PATCH, unit="token", amount=50)
+    selector = QuotaAwareSelector(config, ledger)
+
+    try:
+        selector.select(
+            role="coding",
+            task_type=TASK_CODE_PATCH,
+            task="implement feature",
+            fallback_model_id="main:strong",
+        )
+    except ModelError as exc:
+        assert "No quota capacity" in str(exc)
+    else:
+        raise AssertionError("token exhaustion should block even when request quota remains")
+
+
+def test_record_call_records_every_metered_unit(tmp_path: Path) -> None:
+    policies = [
+        QuotaPolicyConfig(
+            id="requests",
+            model_patterns=["main:strong"],
+            unit="request",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=10)],
+        ),
+        QuotaPolicyConfig(
+            id="tokens",
+            model_patterns=["main:strong"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=100)],
+        ),
+    ]
+    config = _config(policies=policies)
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    selector = QuotaAwareSelector(config, ledger, routing_mode="fixed")
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+    selector.record_call(selection, session_id="session", amounts_by_unit={"request": 1, "token": 42})
+
+    assert [(record.unit, record.amount) for record in ledger.load()] == [("request", 1), ("token", 42)]
+
+
 def test_rolling_window_ignores_expired_records() -> None:
     now = datetime.now(UTC)
     policy = QuotaPolicyConfig(
