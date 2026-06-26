@@ -13,6 +13,10 @@ from helmcode.tools.shell import ShellTool
 HOOKS_FILE_NAME = "hooks.json"
 DEFAULT_HOOK_TIMEOUT_SECONDS = 30
 HOOK_EVENTS = (
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "Stop",
     "pre_plan",
     "post_plan",
     "pre_patch",
@@ -21,6 +25,10 @@ HOOK_EVENTS = (
     "post_test",
 )
 HOOK_EVENT_DESCRIPTIONS = {
+    "UserPromptSubmit": "before a user task enters the agent workflow",
+    "PreToolUse": "before a local tool is executed",
+    "PostToolUse": "after a local tool has returned a result",
+    "Stop": "after a top-level plan or run workflow finishes",
     "pre_plan": "before model allocation and planning provider calls",
     "post_plan": "after a plan has been generated and recorded",
     "pre_patch": "before patch generation starts",

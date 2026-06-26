@@ -585,6 +585,46 @@ def test_runner_records_hook_results_before_planning_provider_call(tmp_path: Pat
     assert len(provider.calls) == 1
 
 
+def test_runner_records_reasonix_prompt_and_stop_hooks(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    HookStore(tmp_path).add(
+        event="UserPromptSubmit",
+        command='python -c "import sys,json; print(json.load(sys.stdin)[\'payload\'][\'task\'])"',
+        hook_id="prompt-hook",
+    )
+    HookStore(tmp_path).add(
+        event="Stop",
+        command=(
+            'python -c "import sys,json; '
+            'print(json.load(sys.stdin)[\'payload\'][\'workflow\'])"'
+        ),
+        hook_id="stop-hook",
+    )
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=SequenceProvider("not a patch"),
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        session_store=store,
+    )
+
+    runner.plan("update greeting")
+
+    hook_events = [
+        payload
+        for _sid, event_type, payload in store.events
+        if event_type == "hook_result"
+    ]
+    assert [payload["hook_id"] for payload in hook_events] == ["prompt-hook", "stop-hook"]
+    assert hook_events[0]["event"] == "UserPromptSubmit"
+    assert hook_events[0]["output"] == "update greeting"
+    assert hook_events[1]["event"] == "Stop"
+    assert hook_events[1]["output"] == "plan"
+
+
 def test_runner_required_hook_failure_blocks_provider_call(tmp_path: Path) -> None:
     (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
     HookStore(tmp_path).add(

@@ -146,6 +146,7 @@ helmcode permissions add "git push" --yes
 helmcode permissions remove "git push" --yes
 helmcode hooks events
 helmcode hooks add pre_plan "python scripts/pre_plan_check.py" --required
+helmcode hooks add PreToolUse "python scripts/allow_tool.py" --required
 helmcode hooks list
 helmcode hooks disable <hook-id>
 helmcode checkpoint create "before risky refactor"
@@ -377,17 +378,25 @@ when explicitly allowed for the workspace. Destructive block patterns such as
 blocked even if a matching prefix is present.
 
 `helmcode hooks` manages Reasonix-style local lifecycle hooks stored in
-`.helmcode/hooks.json`. Supported events are `pre_plan`, `post_plan`,
-`pre_patch`, `post_patch`, `post_apply`, and `post_test`. Hooks execute through
-the same shell tool and permission policy as agent commands, so trusted commands
-can be enabled with `helmcode permissions` while destructive patterns remain
-blocked. Each hook receives JSON on stdin with the event name, hook id,
-workspace path, session id, timestamp, and event payload. Optional hook failures
-are recorded as `hook_result` session events and do not stop the workflow;
-`--required` hooks block the workflow on failure.
+`.helmcode/hooks.json`. Supported Reasonix-compatible events are
+`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and `Stop`; helmcode also keeps
+workflow-specific events `pre_plan`, `post_plan`, `pre_patch`, `post_patch`,
+`post_apply`, and `post_test`. Hooks execute through the same shell tool and
+permission policy as agent commands, so trusted commands can be enabled with
+`helmcode permissions` while destructive patterns remain blocked. Each hook
+receives JSON on stdin with the event name, hook id, workspace path, session id,
+timestamp, and event payload. Optional hook failures are recorded as
+`hook_result` session events and do not stop the workflow; `--required` hooks
+block the workflow on failure. Required `PreToolUse` hooks run before CLI tool
+calls and agent executor tools such as `write_patch`, `apply_patch`, and
+`run_tests`, so they can enforce local policy before a tool mutates the
+workspace.
 
 ```bash
 helmcode hooks events
+helmcode hooks add UserPromptSubmit "python scripts/check_prompt.py" --required
+helmcode hooks add PreToolUse "python scripts/allow_tool.py" --required
+helmcode hooks add PostToolUse "python scripts/audit_tool_result.py"
 helmcode hooks add pre_plan "python scripts/check_budget.py" --required --timeout 10
 helmcode hooks add post_test "python scripts/collect_test_log.py"
 helmcode hooks disable <hook-id>

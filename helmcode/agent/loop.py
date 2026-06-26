@@ -7,6 +7,7 @@ from helmcode.agent.executor import Executor
 from helmcode.agent.planner import Planner
 from helmcode.agent.state import AgentPlan, AgentState
 from helmcode.context.workspace import Workspace
+from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ModelResponse, ProviderAdapter
 
 
@@ -30,6 +31,7 @@ class AgentLoop:
         coding_model_id: str | None = None,
         coding_provider: ProviderAdapter | None = None,
         executor: Executor | None = None,
+        session_store: SessionStore | None = None,
     ) -> None:
         self.workspace = workspace
         self.model_provider = model_provider
@@ -40,7 +42,12 @@ class AgentLoop:
         self.permission_mode = permission_mode
         self.planner = Planner(workspace, model_provider, model_id)
         self.coder = Coder(workspace, self.coding_provider, self.coding_model_id)
-        self.executor = executor or Executor(workspace.root_path, permission_mode=permission_mode)
+        self.executor = executor or Executor(
+            workspace.root_path,
+            permission_mode=permission_mode,
+            session_store=session_store,
+            session_id=state.session_id,
+        )
         self.last_model_response: ModelResponse | None = None
         self.last_plan_response: ModelResponse | None = None
 

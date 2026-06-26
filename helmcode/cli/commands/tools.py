@@ -12,6 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from helmcode.memory.session_store import SessionStore
+from helmcode.tools.hooked import run_tool_with_lifecycle_hooks, sanitize_tool_payload
 from helmcode.tools.read_file import ReadFileTool
 from helmcode.tools.registry import default_tool_registry
 
@@ -71,13 +72,22 @@ def run_tool(
     raw_input = _parse_input(input_json)
     raw_input.update(_parse_params(param or []))
     raw_input = _with_workspace_defaults(raw_input, workspace.resolve(), permission_mode)
-    result = tool.run(raw_input)
-    SessionStore(workspace.resolve()).record(
+    workspace_path = workspace.resolve()
+    session_store = SessionStore(workspace_path)
+    result = run_tool_with_lifecycle_hooks(
+        tool,
+        raw_input,
+        workspace_path=workspace_path,
+        permission_mode=permission_mode,
+        session_store=session_store,
+        session_id="tool-cli",
+    )
+    session_store.record(
         "tool-cli",
         "tool_result",
         {
             "tool": tool.name,
-            "input": _safe_input(raw_input),
+            "input": sanitize_tool_payload(raw_input),
             "ok": result.ok,
             "content": result.content,
             "data": result.data,
@@ -137,15 +147,6 @@ def _with_workspace_defaults(
     if "permission_mode" not in payload:
         payload["permission_mode"] = permission_mode
     return payload
-
-
-def _safe_input(payload: dict[str, Any]) -> dict[str, Any]:
-    safe = dict(payload)
-    if "patch" in safe:
-        safe["patch"] = "<redacted patch>"
-    if "output" in safe and isinstance(safe["output"], str) and len(safe["output"]) > 500:
-        safe["output"] = safe["output"][:500] + "\n[truncated]"
-    return safe
 
 
 def _tool_schema(schema_type) -> dict[str, Any]:

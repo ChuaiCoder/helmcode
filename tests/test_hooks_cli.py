@@ -91,6 +91,10 @@ def test_hooks_cli_lists_supported_events() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert [item["event"] for item in payload] == [
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "Stop",
         "pre_plan",
         "post_plan",
         "pre_patch",

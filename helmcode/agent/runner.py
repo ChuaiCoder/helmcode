@@ -105,7 +105,7 @@ class RunOrchestrator:
     def run(self, task: str, confirmed: bool, run_tests: bool = True) -> RunResult:
         prepared = self.prepare(task)
         if not confirmed:
-            return RunResult(
+            result = RunResult(
                 plan=prepared.plan,
                 pending_patch=prepared.pending_patch,
                 patch_files=prepared.patch_files,
@@ -115,8 +115,14 @@ class RunOrchestrator:
                 repair_attempts=0,
                 review=prepared.review,
             )
+            self._run_hooks(
+                self._session_for_existing(prepared.session_id, prepared.task),
+                "Stop",
+                {"workflow": "run", "task": task, "confirmed": False},
+            )
+            return result
         applied = self.apply_prepared(prepared, run_tests=run_tests)
-        return RunResult(
+        result = RunResult(
             plan=prepared.plan,
             pending_patch=None,
             patch_files=prepared.patch_files,
@@ -126,11 +132,24 @@ class RunOrchestrator:
             repair_attempts=applied.repair_attempts,
             review=prepared.review,
         )
+        self._run_hooks(
+            self._session_for_existing(prepared.session_id, prepared.task),
+            "Stop",
+            {
+                "workflow": "run",
+                "task": task,
+                "confirmed": True,
+                "applied_files": result.applied_files,
+                "repair_attempts": result.repair_attempts,
+            },
+        )
+        return result
 
-    def plan(self, task: str) -> PlannedRun:
+    def plan(self, task: str, *, emit_stop: bool = True) -> PlannedRun:
         state = AgentState.start(self.workspace.root_path, task)
         session = self._session_from_state(state, task)
         self._record(state.session_id, "user_message", {"content": task})
+        self._run_hooks(session, "UserPromptSubmit", {"task": task})
         self._run_hooks(session, "pre_plan", {"task": task})
         allocation = self._allocate_task(session, task)
         preplan_context = self._run_preplan_agents(session, task, allocation)
@@ -152,15 +171,22 @@ class RunOrchestrator:
             coding_model_id=self.coding_model_id,
             coding_provider=self.coding_provider,
             executor=self.external_executor,
+            session_store=self.session_store,
         )
         plan = agent.plan(task, preplan_context=preplan_context)
         self._record_model_call(session, selection, agent.last_plan_response)
         self._record(state.session_id, "plan_created", {"content": plan.content})
         self._run_hooks(session, "post_plan", {"task": task, "plan": plan.content})
+        if emit_stop:
+            self._run_hooks(
+                session,
+                "Stop",
+                {"workflow": "plan", "task": task, "plan": plan.content},
+            )
         return PlannedRun(task=task, plan=plan.content, session_id=state.session_id)
 
     def prepare(self, task: str) -> PreparedRun:
-        return self.generate_patch_from_plan(self.plan(task))
+        return self.generate_patch_from_plan(self.plan(task, emit_stop=False))
 
     def generate_patch_from_plan(self, planned: PlannedRun) -> PreparedRun:
         if not self.mode.can_generate_patch:
@@ -187,6 +213,7 @@ class RunOrchestrator:
             coding_model_id=selection.model_id,
             coding_provider=coding_provider,
             executor=self.external_executor,
+            session_store=self.session_store,
         )
         state.plan = AgentPlan(content=planned.plan)
         generated_patch = agent.generate_patch(planned.task)
@@ -234,6 +261,7 @@ class RunOrchestrator:
             coding_model_id=self.coding_model_id,
             coding_provider=self.coding_provider,
             executor=self.external_executor,
+            session_store=self.session_store,
         )
         applied_files: list[str] = []
         test_output: str | None = None
@@ -275,6 +303,7 @@ class RunOrchestrator:
                     coding_model_id=repair_selection.model_id,
                     coding_provider=repair_provider,
                     executor=self.external_executor,
+                    session_store=self.session_store,
                 )
                 repair_patch = repair_agent.generate_repair_patch(prepared.task, test_result.output)
                 self._record_model_call(session, repair_selection, repair_patch.response)
@@ -384,6 +413,11 @@ class RunOrchestrator:
             user_task=task,
             created_at=state.created_at,
         )
+
+    def _session_for_existing(self, session_id: str, task: str) -> AgentSession:
+        state = AgentState.start(self.workspace.root_path, task)
+        state.session_id = session_id
+        return self._session_from_state(state, task)
 
     def _select_model(
         self,

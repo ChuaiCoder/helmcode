@@ -6,6 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from helmcode.cli.main import app
+from helmcode.memory.hooks import HookStore
 from helmcode.memory.session_store import SessionStore
 from helmcode.tools.registry import default_tool_registry
 
@@ -109,3 +110,77 @@ def test_tools_run_shell_uses_permission_policy(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["ok"] is False
     assert "blocked" in payload["data"]["risk"]
+
+
+def test_tools_run_records_reasonix_tool_hooks(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("hello\n", encoding="utf-8")
+    HookStore(tmp_path).add(
+        event="PreToolUse",
+        command='python -c "import sys,json; print(json.load(sys.stdin)[\'payload\'][\'tool\'])"',
+        hook_id="pre-tool",
+    )
+    HookStore(tmp_path).add(
+        event="PostToolUse",
+        command=(
+            'python -c "import sys,json; '
+            'print(json.load(sys.stdin)[\'payload\'][\'result\'][\'ok\'])"'
+        ),
+        hook_id="post-tool",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "tools",
+            "run",
+            "read_file",
+            '{"path":"README.md"}',
+            "--workspace",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["ok"] is True
+    hook_events = [
+        event.payload
+        for event in SessionStore(tmp_path).list_events("tool-cli")
+        if event.event_type == "hook_result"
+    ]
+    assert [payload["hook_id"] for payload in hook_events] == ["pre-tool", "post-tool"]
+    assert hook_events[0]["event"] == "PreToolUse"
+    assert hook_events[0]["output"] == "read_file"
+    assert hook_events[0]["event_payload"]["payload"]["input"]["root_path"] == str(tmp_path)
+    assert hook_events[1]["event"] == "PostToolUse"
+    assert hook_events[1]["output"] == "True"
+
+
+def test_tools_run_required_pre_tool_hook_blocks_tool(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("hello\n", encoding="utf-8")
+    HookStore(tmp_path).add(
+        event="PreToolUse",
+        command='python -c "import sys; print(\'blocked\'); sys.exit(9)"',
+        hook_id="block-tool",
+        required=True,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "tools",
+            "run",
+            "read_file",
+            '{"path":"README.md"}',
+            "--workspace",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["data"]["hook_blocked"] is True
+    assert payload["data"]["hook_id"] == "block-tool"
+    assert "required hook failed" in payload["content"]
