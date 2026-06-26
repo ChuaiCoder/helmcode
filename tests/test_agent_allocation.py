@@ -59,6 +59,17 @@ def _allocator(config: HelmcodeConfig, tmp_path: Path) -> CodingPlanTaskAllocato
     )
 
 
+def _allocator_with_preset(
+    config: HelmcodeConfig,
+    tmp_path: Path,
+    preset: str,
+) -> CodingPlanTaskAllocator:
+    return CodingPlanTaskAllocator(
+        config,
+        QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl"), model_preset=preset),
+    )
+
+
 def test_complex_coding_task_uses_multi_agent_quota_saving_path(tmp_path: Path) -> None:
     allocation = _allocator(_config(), tmp_path).allocate(
         "refactor the architecture and implement a safer routing layer"
@@ -126,6 +137,28 @@ def test_quota_allocation_uses_cheaper_profiled_coding_model(tmp_path: Path) -> 
     ]
     assert allocation.selected_cost_score == 3
     assert allocation.estimated_savings_score == 5
+
+
+def test_pro_preset_allocation_prefers_high_capability_profile(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:cheap-coder",
+            labels=["coding", "cheap"],
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+
+    allocation = _allocator_with_preset(config, tmp_path, "pro").allocate("add a small helper")
+
+    assert allocation.model_preset == "pro"
+    assert [assignment.model_id for assignment in allocation.assignments] == [
+        "main:planner",
+        "main:coder",
+    ]
+    coder = next(assignment for assignment in allocation.assignments if assignment.agent_id == "coder")
+    assert "using pro preset" in coder.reason
 
 
 def test_scoped_model_override_changes_only_matching_agent(tmp_path: Path) -> None:

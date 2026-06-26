@@ -10,6 +10,7 @@ def test_interactive_state_commands_update_mode_routing_and_model(tmp_path: Path
 
     assert chat.handle_interactive_line("/mode run", state) is True
     assert chat.handle_interactive_line("/routing fixed", state) is True
+    assert chat.handle_interactive_line("/preset pro", state) is True
     assert chat.handle_interactive_line("/model main:coder", state) is True
     assert chat.handle_interactive_line("/role-model coding=main:pro-coder", state) is True
     assert chat.handle_interactive_line("/budget 5", state) is True
@@ -21,6 +22,7 @@ def test_interactive_state_commands_update_mode_routing_and_model(tmp_path: Path
 
     assert state.action_mode == "run"
     assert state.routing_mode == "fixed"
+    assert state.model_preset == "pro"
     assert state.forced_model == "main:coder"
     assert state.model_overrides == {"coding": "main:pro-coder"}
     assert state.max_cost_score == 5
@@ -67,6 +69,7 @@ def test_bare_prompt_uses_current_mode(monkeypatch, tmp_path: Path) -> None:
             "no_tests": False,
             "routing": "recommend",
             "model": "main:coder",
+            "preset": "balanced",
             "role_model": [],
             "max_cost_score": None,
             "no_preplan_cache": False,
@@ -104,6 +107,7 @@ def test_run_command_passes_session_flags(monkeypatch, tmp_path: Path) -> None:
             "no_tests": True,
             "routing": "quota",
             "model": "main:coder",
+            "preset": "balanced",
             "role_model": [],
             "max_cost_score": 6,
             "session_budget_score": 12,
@@ -142,6 +146,7 @@ def test_agents_command_builds_allocation(monkeypatch, tmp_path: Path) -> None:
             "workspace": tmp_path,
             "routing": "fixed",
             "model": "main:coder",
+            "model_preset": "balanced",
             "model_overrides": None,
             "include_repair": False,
             "max_cost_score": 4,
@@ -195,6 +200,7 @@ def test_cost_command_previews_cost(monkeypatch, tmp_path: Path) -> None:
             "workspace": tmp_path,
             "routing": "quota",
             "model": "main:coder",
+            "preset": "balanced",
             "role_model": [],
             "include_repair": False,
             "max_cost_score": 6,
@@ -225,6 +231,7 @@ def test_routes_command_compares_current_session_routing(monkeypatch, tmp_path: 
             "task": "add tests",
             "workspace": tmp_path,
             "model": "main:coder",
+            "preset": "balanced",
             "role_model": [],
             "include_repair": False,
             "max_cost_score": 7,
@@ -262,6 +269,7 @@ def test_retry_command_uses_current_session_flags(monkeypatch, tmp_path: Path) -
             "mode": "plan",
             "routing": "quota",
             "model": "main:planner",
+            "preset": "balanced",
             "role_model": [],
             "max_cost_score": 8,
             "session_budget_score": 12,
@@ -279,6 +287,7 @@ def test_new_command_resets_interactive_state(tmp_path: Path) -> None:
         action_mode="run",
         routing_mode="fixed",
         forced_model="main:coder",
+        model_preset="pro",
         model_overrides={"coding": "main:pro-coder"},
         max_cost_score=5,
         session_budget_score=12,
@@ -293,6 +302,7 @@ def test_new_command_resets_interactive_state(tmp_path: Path) -> None:
     assert state.action_mode == "recommend"
     assert state.routing_mode == "quota"
     assert state.forced_model is None
+    assert state.model_preset == "balanced"
     assert state.model_overrides is None
     assert state.max_cost_score is None
     assert state.session_budget_score is None

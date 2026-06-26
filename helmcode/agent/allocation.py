@@ -108,6 +108,7 @@ class TaskAllocation:
     detected_task_type: str
     complexity: str
     strategy: str
+    model_preset: str
     assignments: list[AgentAssignment]
     warnings: list[str]
     estimated_calls: int
@@ -169,6 +170,7 @@ class TaskAllocation:
             "detected_task_type": self.detected_task_type,
             "complexity": self.complexity,
             "strategy": self.strategy,
+            "model_preset": self.model_preset,
             "assignments": [assignment.to_dict() for assignment in self.assignments],
             "warnings": self.warnings,
             "blocked": self.blocked,
@@ -382,6 +384,7 @@ class CodingPlanTaskAllocator:
             detected_task_type=detected_task_type,
             complexity=complexity,
             strategy=self._strategy(detected_task_type, complexity),
+            model_preset=self.selector.model_preset,
             assignments=assignments,
             warnings=warnings,
             estimated_calls=len(assignments),

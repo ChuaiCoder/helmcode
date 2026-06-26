@@ -19,7 +19,7 @@ from helmcode.core.error_handler import ErrorHandler, ErrorResponse
 from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.model_registry import ModelRegistry
-from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
+from helmcode.models.quota import QuotaAwareSelector, QuotaLedger, normalize_model_preset
 from helmcode.models.selector import ModelSelector
 from helmcode.safety.permissions import PermissionMode
 
@@ -34,6 +34,11 @@ def run_task(
     no_tests: bool = typer.Option(False, "--no-tests", help="Skip automatic test command after apply."),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed, quota, or recommend."),
     model: str | None = typer.Option(None, "--model", help="Force all model calls to this provider:model id."),
+    preset: str = typer.Option(
+        "balanced",
+        "--preset",
+        help="Coding Plan model preset: economy, balanced, or pro.",
+    ),
     role_model: list[str] | None = typer.Option(
         None,
         "--role-model",
@@ -67,6 +72,7 @@ def run_task(
         config = load_config()
         ws = Workspace.discover(workspace)
         routing_mode = _normalize_routing(routing or config.routing_mode)
+        normalized_preset = normalize_model_preset(preset)
         selector = ModelSelector(config.model_roles)
         planning_model_id = selector.select(MODEL_ROLE_PLANNING)
         coding_model_id = selector.select(MODEL_ROLE_CODING)
@@ -75,6 +81,7 @@ def run_task(
             config,
             QuotaLedger.for_workspace(ws.root_path),
             routing_mode=routing_mode,
+            model_preset=normalized_preset,
         )
         if routing_mode == "recommend":
             _print_recommendations(
@@ -82,6 +89,7 @@ def run_task(
                 workspace=ws.root_path,
                 routing=routing_mode,
                 override_model_id=model,
+                model_preset=normalized_preset,
                 model_overrides=parse_model_overrides(role_model),
                 include_repair=not no_tests,
                 max_cost_score=max_cost_score,
@@ -211,6 +219,7 @@ def _print_recommendations(
     workspace: Path,
     routing: str,
     override_model_id: str | None,
+    model_preset: str | None,
     model_overrides: dict[str, str] | None,
     include_repair: bool,
     max_cost_score: int | None,
@@ -220,6 +229,7 @@ def _print_recommendations(
         workspace=workspace,
         routing=routing,
         model=override_model_id,
+        model_preset=model_preset,
         model_overrides=model_overrides,
         include_repair=include_repair,
         max_cost_score=max_cost_score,

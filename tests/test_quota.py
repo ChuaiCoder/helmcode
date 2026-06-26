@@ -101,6 +101,59 @@ def test_fixed_selection_keeps_role_mapping_with_cheaper_profile(tmp_path: Path)
     assert selection.routing_mode == "fixed"
 
 
+def test_pro_preset_prefers_higher_cost_profile(tmp_path: Path) -> None:
+    config = _config(
+        roles={"default": "main:fast", "coding": "main:strong"},
+        profiles=[
+            ModelProfileConfig(id="main:strong", preferred_for=[TASK_CODE_PATCH], cost_tier="high"),
+            ModelProfileConfig(id="main:cheap-code", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+        ],
+    )
+    selector = QuotaAwareSelector(
+        config,
+        QuotaLedger(tmp_path / "quota.jsonl"),
+        routing_mode="quota",
+        model_preset="pro",
+    )
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+
+    assert selection.model_id == "main:strong"
+    assert "using pro preset" in selection.reason
+
+
+def test_economy_preset_avoids_high_cost_profile_when_cheaper_exists(tmp_path: Path) -> None:
+    config = _config(
+        roles={"default": "main:fast", "coding": "main:strong"},
+        profiles=[
+            ModelProfileConfig(id="main:strong", preferred_for=[TASK_CODE_PATCH], cost_tier="high"),
+            ModelProfileConfig(id="main:mid-code", preferred_for=[TASK_CODE_PATCH], cost_tier="medium"),
+            ModelProfileConfig(id="main:cheap-code", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+        ],
+    )
+    selector = QuotaAwareSelector(
+        config,
+        QuotaLedger(tmp_path / "quota.jsonl"),
+        routing_mode="quota",
+        model_preset="economy",
+    )
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+
+    assert selection.model_id == "main:cheap-code"
+    assert "using economy preset" in selection.reason
+
+
 def test_quota_selection_uses_next_lowest_cost_profile_when_cheapest_is_exhausted(
     tmp_path: Path,
 ) -> None:

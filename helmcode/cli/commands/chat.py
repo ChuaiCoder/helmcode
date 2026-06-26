@@ -43,7 +43,7 @@ from helmcode.cli.commands import (
 from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
-from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
+from helmcode.models.quota import QuotaAwareSelector, QuotaLedger, normalize_model_preset
 
 console = Console()
 
@@ -56,6 +56,7 @@ class InteractiveState:
     action_mode: ActionMode = "recommend"
     routing_mode: str = "quota"
     forced_model: str | None = None
+    model_preset: str = "balanced"
     max_cost_score: int | None = None
     session_budget_score: int | None = None
     budget_key: str = "default"
@@ -70,6 +71,11 @@ def chat_cmd(
     mode: str = typer.Option("recommend", "--mode", help="Default bare prompt action: recommend, plan, or run."),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed, quota, or recommend."),
     model: str | None = typer.Option(None, "--model", help="Force all model calls to this provider:model id."),
+    preset: str = typer.Option(
+        "balanced",
+        "--preset",
+        help="Coding Plan model preset: economy, balanced, or pro.",
+    ),
     role_model: list[str] | None = typer.Option(
         None,
         "--role-model",
@@ -103,6 +109,7 @@ def chat_cmd(
         action_mode=_normalize_mode(mode),
         routing_mode=_normalize_routing(routing or config.routing_mode),
         forced_model=model,
+        model_preset=normalize_model_preset(preset),
         model_overrides=parse_model_overrides(role_model),
         max_cost_score=max_cost_score,
         session_budget_score=session_budget_score,
@@ -208,6 +215,7 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             mode=state.action_mode,
             routing=state.routing_mode,
             model=state.forced_model,
+            preset=state.model_preset,
             role_model=_role_model_args(state),
             max_cost_score=state.max_cost_score,
             session_budget_score=state.session_budget_score,
@@ -274,6 +282,7 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             workspace=state.workspace_path,
             routing="quota" if state.routing_mode == "recommend" else state.routing_mode,
             model=state.forced_model,
+            preset=state.model_preset,
             role_model=_role_model_args(state),
             include_repair=False,
             max_cost_score=state.max_cost_score,
@@ -288,6 +297,7 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             task=rest,
             workspace=state.workspace_path,
             model=state.forced_model,
+            preset=state.model_preset,
             role_model=_role_model_args(state),
             include_repair=False,
             max_cost_score=state.max_cost_score,
@@ -382,6 +392,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/model":
         _set_model(state, rest)
         return True
+    if command == "/preset":
+        _set_preset(state, rest)
+        return True
     if command == "/role-model":
         _set_role_model(state, rest)
         return True
@@ -428,6 +441,7 @@ def _recommend(task: str, state: InteractiveState) -> None:
         no_tests=not state.run_tests,
         routing="recommend",
         model=state.forced_model,
+        preset=state.model_preset,
         role_model=_role_model_args(state),
         max_cost_score=state.max_cost_score,
         no_preplan_cache=not state.preplan_cache,
@@ -440,6 +454,7 @@ def _agents(task: str, state: InteractiveState) -> None:
         workspace=state.workspace_path,
         routing="quota" if state.routing_mode == "recommend" else state.routing_mode,
         model=state.forced_model,
+        model_preset=state.model_preset,
         model_overrides=state.model_overrides,
         include_repair=False,
         max_cost_score=state.max_cost_score,
@@ -454,6 +469,7 @@ def _plan(task: str, state: InteractiveState) -> None:
         workspace=state.workspace_path,
         routing=routing,
         model=state.forced_model,
+        preset=state.model_preset,
         role_model=_role_model_args(state),
         max_cost_score=state.max_cost_score,
         session_budget_score=state.session_budget_score,
@@ -470,6 +486,7 @@ def _run(task: str, state: InteractiveState) -> None:
         no_tests=not state.run_tests,
         routing=state.routing_mode,
         model=state.forced_model,
+        preset=state.model_preset,
         role_model=_role_model_args(state),
         max_cost_score=state.max_cost_score,
         session_budget_score=state.session_budget_score,
@@ -491,6 +508,7 @@ def _print_banner(state: InteractiveState) -> None:
     table.add_row("Permission", config.permission_mode)
     table.add_row("Mode", state.action_mode)
     table.add_row("Routing", state.routing_mode)
+    table.add_row("Preset", state.model_preset)
     table.add_row("Forced model", state.forced_model or "none")
     table.add_row("Role models", _role_model_text(state))
     table.add_row("Budget", str(state.max_cost_score) if state.max_cost_score is not None else "none")
@@ -530,6 +548,7 @@ def _print_help(compact: bool) -> None:
         ("/clear", "Clear the screen and redraw the session status."),
         ("/mode recommend|plan|run", "Set what bare prompt text does."),
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
+        ("/preset economy|balanced|pro", "Set Coding Plan model preset."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
         ("/role-model <key=model|clear>", "Override one Coding Plan role or agent model."),
         ("/budget <score|clear>", "Set a Coding Plan max cost score for plan/run."),
@@ -590,7 +609,10 @@ def _print_help(compact: bool) -> None:
 def _prompt(state: InteractiveState) -> str:
     model = f" model={state.forced_model}" if state.forced_model else ""
     role_models = " role-models" if state.model_overrides else ""
-    return f"[bold]helmcode:{state.action_mode}:{state.routing_mode}{model}{role_models}> [/bold]"
+    return (
+        f"[bold]helmcode:{state.action_mode}:{state.routing_mode}:"
+        f"{state.model_preset}{model}{role_models}> [/bold]"
+    )
 
 
 def _split_line(line: str) -> tuple[str, str]:
@@ -627,6 +649,14 @@ def _set_model(state: InteractiveState, value: str) -> None:
     console.print(f"Forced model: {state.forced_model or 'none'}")
 
 
+def _set_preset(state: InteractiveState, value: str) -> None:
+    if not value:
+        console.print(f"Preset: {state.model_preset}")
+        return
+    state.model_preset = normalize_model_preset(value)
+    console.print(f"Preset: {state.model_preset}")
+
+
 def _set_role_model(state: InteractiveState, value: str) -> None:
     current = dict(state.model_overrides or {})
     if not value:
@@ -657,6 +687,7 @@ def _new_session_state(state: InteractiveState) -> None:
     state.action_mode = "recommend"
     state.routing_mode = _normalize_routing(config.routing_mode)
     state.forced_model = None
+    state.model_preset = "balanced"
     state.model_overrides = None
     state.max_cost_score = None
     state.session_budget_score = None

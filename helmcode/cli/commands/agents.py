@@ -23,6 +23,11 @@ def plan_agents(
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed or quota."),
     model: str | None = typer.Option(None, "--model", help="Force all agents to this provider:model id."),
+    preset: str = typer.Option(
+        "balanced",
+        "--preset",
+        help="Coding Plan model preset: economy, balanced, or pro.",
+    ),
     role_model: list[str] | None = typer.Option(
         None,
         "--role-model",
@@ -46,6 +51,7 @@ def plan_agents(
         workspace=workspace,
         routing=routing,
         model=model,
+        model_preset=preset,
         model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
@@ -89,6 +95,7 @@ def build_allocation(
     workspace: Path,
     routing: str | None = None,
     model: str | None = None,
+    model_preset: str | None = None,
     model_overrides: dict[str, str] | None = None,
     include_repair: bool = False,
     max_cost_score: int | None = None,
@@ -103,6 +110,7 @@ def build_allocation(
         config,
         QuotaLedger.for_workspace(workspace.resolve()),
         routing_mode=routing_mode,
+        model_preset=model_preset,
     )
     allocator = CodingPlanTaskAllocator(config, selector, workspace=Workspace.discover(workspace.resolve()))
     return allocator.allocate(

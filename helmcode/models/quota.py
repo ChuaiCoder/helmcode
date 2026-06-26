@@ -28,6 +28,10 @@ ROLE_TASK_TYPES = {
 }
 
 COST_ORDER = {"low": 0, "medium": 1, "high": 2}
+MODEL_PRESET_BALANCED = "balanced"
+MODEL_PRESET_ECONOMY = "economy"
+MODEL_PRESET_PRO = "pro"
+MODEL_PRESETS = {MODEL_PRESET_BALANCED, MODEL_PRESET_ECONOMY, MODEL_PRESET_PRO}
 LEDGER_FILE = "quota_ledger.jsonl"
 
 
@@ -327,10 +331,12 @@ class QuotaAwareSelector:
         config: HelmcodeConfig,
         ledger: QuotaLedger,
         routing_mode: str | None = None,
+        model_preset: str | None = None,
     ) -> None:
         self.config = config
         self.ledger = ledger
         self.routing_mode = routing_mode or config.routing_mode
+        self.model_preset = normalize_model_preset(model_preset)
         self.fixed_selector = ModelSelector(config.model_roles)
         self.profiles = {profile.id: profile for profile in config.model_profiles}
 
@@ -393,6 +399,8 @@ class QuotaAwareSelector:
             status = quota_state.status_for_model(model_id)
             if status.available:
                 reason = f"selected for {task_type}"
+                if self.model_preset != MODEL_PRESET_BALANCED:
+                    reason += f" using {self.model_preset} preset"
                 if status.policy_id:
                     reason += f"; quota policies {status.policy_id} have capacity"
                 else:
@@ -460,7 +468,8 @@ class QuotaAwareSelector:
             for profile in self.config.model_profiles
             if task_type in profile.preferred_for
         ]
-        preferred.sort(key=lambda profile: (COST_ORDER.get(profile.cost_tier, 1), profile.id))
+        preferred = self._apply_model_preset(preferred)
+        preferred.sort(key=self._profile_sort_key)
         candidates = [profile.id for profile in preferred]
         role_model = fallback_model_id or self.config.model_roles.get(role)
         if role_model:
@@ -469,6 +478,18 @@ class QuotaAwareSelector:
         if default_model:
             candidates.append(default_model)
         return _expand_fallbacks(_dedupe(candidates), self.profiles)
+
+    def _apply_model_preset(self, profiles: list[ModelProfileConfig]) -> list[ModelProfileConfig]:
+        if self.model_preset != MODEL_PRESET_ECONOMY:
+            return profiles
+        cheaper_profiles = [profile for profile in profiles if profile.cost_tier != "high"]
+        return cheaper_profiles or profiles
+
+    def _profile_sort_key(self, profile: ModelProfileConfig) -> tuple[int, str]:
+        cost = COST_ORDER.get(profile.cost_tier, COST_ORDER["medium"])
+        if self.model_preset == MODEL_PRESET_PRO:
+            cost = -cost
+        return cost, profile.id
 
 
 def classify_task(task: str) -> str:
@@ -552,6 +573,18 @@ def task_type_for_role(role: str, task: str = "") -> str:
     if role in ROLE_TASK_TYPES:
         return ROLE_TASK_TYPES[role]
     return classify_task(task)
+
+
+def normalize_model_preset(value: object | None) -> str:
+    if not isinstance(value, str) or not value:
+        return MODEL_PRESET_BALANCED
+    normalized = value.strip().lower()
+    if normalized not in MODEL_PRESETS:
+        raise ModelError(
+            f"Unsupported model preset {value!r}; expected one of: "
+            + ", ".join(sorted(MODEL_PRESETS))
+        )
+    return normalized
 
 
 def _window_bounds(window, now: datetime) -> tuple[datetime, datetime]:

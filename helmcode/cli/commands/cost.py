@@ -21,6 +21,11 @@ def cost_cmd(
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w", help="Workspace root."),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed, quota, or recommend."),
     model: str | None = typer.Option(None, "--model", help="Force all agents to this provider:model id."),
+    preset: str = typer.Option(
+        "balanced",
+        "--preset",
+        help="Coding Plan model preset: economy, balanced, or pro.",
+    ),
     role_model: list[str] | None = typer.Option(
         None,
         "--role-model",
@@ -54,6 +59,7 @@ def cost_cmd(
         workspace=workspace_info.root_path,
         routing=routing,
         model=model,
+        model_preset=preset,
         model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
@@ -106,6 +112,7 @@ def _payload(
         "summary": {
             "detected_task_type": allocation.detected_task_type,
             "complexity": allocation.complexity,
+            "model_preset": allocation.model_preset,
             "estimated_calls": allocation.estimated_calls,
             "baseline_cost_score": allocation.baseline_cost_score,
             "selected_cost_score": allocation.selected_cost_score,
@@ -125,6 +132,7 @@ def _print_cost(payload: dict[str, object]) -> None:
     table.add_column("Value")
     table.add_row("Task type", str(summary["detected_task_type"]))
     table.add_row("Complexity", str(summary["complexity"]))
+    table.add_row("Model preset", str(summary["model_preset"]))
     table.add_row("Context tokens", str(context["estimated_tokens"]))
     table.add_row("Explicit context tokens", str(context["explicit_context_tokens"]))
     table.add_row("Files considered", ", ".join(context["files_considered"]) or "none")

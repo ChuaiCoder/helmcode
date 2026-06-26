@@ -26,6 +26,11 @@ def plan_task(
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed or quota."),
     model: str | None = typer.Option(None, "--model", help="Force all model calls to this provider:model id."),
+    preset: str = typer.Option(
+        "balanced",
+        "--preset",
+        help="Coding Plan model preset: economy, balanced, or pro.",
+    ),
     role_model: list[str] | None = typer.Option(
         None,
         "--role-model",
@@ -75,6 +80,7 @@ def plan_task(
         config,
         QuotaLedger.for_workspace(ws.root_path),
         routing_mode=routing_mode,
+        model_preset=preset,
     )
     runtime = AgentRuntime(
         workspace=ws,

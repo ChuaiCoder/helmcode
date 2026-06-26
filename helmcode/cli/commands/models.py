@@ -97,6 +97,11 @@ def recommend_models(
     task: str = typer.Argument(...),
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     model: str | None = typer.Option(None, "--model", help="Force all phases to this provider:model id."),
+    preset: str = typer.Option(
+        "balanced",
+        "--preset",
+        help="Coding Plan model preset: economy, balanced, or pro.",
+    ),
     role_model: list[str] | None = typer.Option(
         None,
         "--role-model",
@@ -117,6 +122,7 @@ def recommend_models(
         workspace=workspace,
         routing="quota",
         model=model,
+        model_preset=preset,
         model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
