@@ -69,14 +69,39 @@ class AgentRuntime:
                 routing_mode="fixed",
             )
         else:
-            selection = self.selector.select(
-                role=role,
-                task_type=task_type,
-                task=task,
-                fallback_model_id=fallback_model_id,
-                override_model_id=self.override_model_id,
-                prefer_different_from=prefer_different_from,
-            )
+            try:
+                selection = self.selector.select(
+                    role=role,
+                    task_type=task_type,
+                    task=task,
+                    fallback_model_id=fallback_model_id,
+                    override_model_id=self.override_model_id,
+                    prefer_different_from=prefer_different_from,
+                )
+            except ModelError as exc:
+                payload = {
+                    "role": role,
+                    "task_type": task_type,
+                    "model_id": self.override_model_id or fallback_model_id,
+                    "routing_mode": self.selector.routing_mode,
+                    "reason": str(exc),
+                    "blocked_reason": str(exc),
+                }
+                session.record("model_blocked", payload)
+                self._record(session.session_id, "model_blocked", payload)
+                raise
+        if selection.quota_status is not None and not selection.quota_status.available:
+            payload = {
+                "role": role,
+                "task_type": task_type,
+                "model_id": selection.model_id,
+                "routing_mode": selection.routing_mode,
+                "reason": selection.reason,
+                "blocked_reason": self._quota_unavailable_message(selection),
+            }
+            session.record("model_blocked", payload)
+            self._record(session.session_id, "model_blocked", payload)
+            raise ModelError(payload["blocked_reason"])
         payload = {
             "role": role,
             "task_type": task_type,
@@ -109,3 +134,14 @@ class AgentRuntime:
     def _record(self, session_id: str, event_type: str, payload: dict[str, object]) -> None:
         if self.session_store is not None:
             self.session_store.record(session_id, event_type, payload)
+
+    def _quota_unavailable_message(self, selection: ModelSelection) -> str:
+        status = selection.quota_status
+        if status is None:
+            return f"No quota capacity for {selection.role}/{selection.task_type} on {selection.model_id}"
+        reset_text = status.next_restore_at.isoformat() if status.next_restore_at else "unknown reset time"
+        policy_text = status.policy_id or "unscoped quota policy"
+        return (
+            f"No quota capacity for {selection.role}/{selection.task_type} on "
+            f"{selection.model_id} under {policy_text}; resets at {reset_text}"
+        )

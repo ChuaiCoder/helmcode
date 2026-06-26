@@ -129,6 +129,22 @@ class ReviewProvider:
         return ModelResponse(content=self.content)
 
 
+class PreplanProvider:
+    def __init__(self, patch: str) -> None:
+        self.patch = patch
+        self.calls: list[tuple[str, list[ChatMessage]]] = []
+
+    def chat(self, model: str, messages: list[ChatMessage]) -> ModelResponse:
+        self.calls.append((model, messages))
+        if model == "fake:fast":
+            if "summarizer agent" in messages[0].content:
+                return ModelResponse(content="SUMMARY: hello.txt is the main change target")
+            return ModelResponse(content="SCOUT: check hello.txt and pyproject.toml")
+        if model == "fake:planning":
+            return ModelResponse(content="PLAN:\n1. Update hello.txt.\n2. Run pytest.")
+        return ModelResponse(content=self.patch)
+
+
 class RecordingSessionStore:
     def __init__(self) -> None:
         self.events: list[tuple[str, str, dict[str, object]]] = []
@@ -459,6 +475,56 @@ def test_runner_records_coding_plan_allocation_event(tmp_path: Path) -> None:
     ]
 
 
+def test_runner_executes_preplan_agents_and_injects_context(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "fast": "fake:fast",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+            "review": "fake:review",
+        }
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl")),
+        session_store=store,
+    )
+    provider = PreplanProvider(patch)
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+    )
+
+    result = runner.plan("refactor the whole project architecture and implement a safer greeting helper")
+
+    assert "Update hello.txt" in result.plan
+    assert [model for model, _messages in provider.calls] == ["fake:fast", "fake:fast", "fake:planning"]
+    planning_prompt = provider.calls[-1][1][1].content
+    assert "Coding Plan pre-agent findings" in planning_prompt
+    assert "SCOUT: check hello.txt and pyproject.toml" in planning_prompt
+    assert "SUMMARY: hello.txt is the main change target" in planning_prompt
+    completed = [payload for _sid, event_type, payload in store.events if event_type == "preplan_agent_completed"]
+    assert [payload["agent_id"] for payload in completed] == ["scout", "summarizer"]
+    called_models = [payload["model_id"] for _sid, event_type, payload in store.events if event_type == "model_called"]
+    assert called_models == ["fake:fast", "fake:fast", "fake:planning"]
+
+
 def test_runner_blocks_when_required_allocation_has_no_quota(tmp_path: Path) -> None:
     (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
     workspace = Workspace.discover(tmp_path)
@@ -543,6 +609,54 @@ def test_runner_plan_mode_can_record_blocked_allocation_without_blocking(tmp_pat
     assert "Update hello.txt" in result.plan
     allocation_events = [payload for _sid, event_type, payload in store.events if event_type == "task_allocated"]
     assert allocation_events[0]["blocked"] is True
+
+
+def test_runner_plan_mode_still_blocks_exhausted_planning_call(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+        },
+        quota_policies=[
+            QuotaPolicyConfig(
+                id="planning_only",
+                model_patterns=["fake:planning"],
+                windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+            )
+        ],
+    )
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    ledger.record(model_id="fake:planning", role="planning", task_type="plan")
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, ledger),
+        session_store=store,
+    )
+    provider = SequenceProvider("not called")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+        block_on_allocation=False,
+    )
+
+    try:
+        runner.plan("plan a greeting helper")
+    except ModelError as exc:
+        assert "No quota capacity for planning/plan" in str(exc)
+    else:
+        raise AssertionError("exhausted planning quota should block the real provider call")
+    assert provider.calls == []
+    blocked = [payload for _sid, event_type, payload in store.events if event_type == "model_blocked"]
+    assert blocked[0]["model_id"] == "fake:planning"
 
 
 def test_generate_patch_reviews_patch_when_review_model_is_configured(tmp_path: Path) -> None:

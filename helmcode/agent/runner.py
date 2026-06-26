@@ -2,22 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from helmcode.agent.allocation import AgentAssignment, TaskAllocation
 from helmcode.agent.executor import TestRunResult
 from helmcode.agent.loop import AgentLoop
 from helmcode.agent.reviewer import Reviewer
 from helmcode.agent.runtime import AgentRuntime
 from helmcode.agent.session import AgentSession
 from helmcode.agent.state import AgentPlan, AgentState
+from helmcode.context.context_builder import ContextBuilder
 from helmcode.context.workspace import Workspace
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
-from helmcode.core.exceptions import PermissionDenied
+from helmcode.core.exceptions import ModelError, PermissionDenied
 from helmcode.memory.session_store import SessionStore
-from helmcode.models.provider import ProviderAdapter
+from helmcode.models.provider import ChatMessage, ProviderAdapter
 from helmcode.models.quota import (
     TASK_CODE_PATCH,
     TASK_PLAN,
     TASK_REPAIR,
+    TASK_REPO_SCAN,
     TASK_REVIEW,
+    TASK_SUMMARIZE,
     ModelSelection,
 )
 from helmcode.safety.permissions import PermissionMode
@@ -115,7 +119,8 @@ class RunOrchestrator:
         state = AgentState.start(self.workspace.root_path, task)
         session = self._session_from_state(state, task)
         self._record(state.session_id, "user_message", {"content": task})
-        self._allocate_task(session, task)
+        allocation = self._allocate_task(session, task)
+        preplan_context = self._run_preplan_agents(session, task, allocation)
         selection = self._select_model(
             session=session,
             role="planning",
@@ -135,7 +140,7 @@ class RunOrchestrator:
             coding_provider=self.coding_provider,
             executor=self.external_executor,
         )
-        plan = agent.plan(task)
+        plan = agent.plan(task, preplan_context=preplan_context)
         self._record_model_call(session, selection)
         self._record(state.session_id, "plan_created", {"content": plan.content})
         return PlannedRun(task=task, plan=plan.content, session_id=state.session_id)
@@ -376,11 +381,109 @@ class RunOrchestrator:
         if self.runtime is not None:
             self.runtime.record_model_call(session, selection)
 
-    def _allocate_task(self, session: AgentSession, task: str) -> None:
+    def _allocate_task(self, session: AgentSession, task: str) -> TaskAllocation | None:
         if self.runtime is not None:
-            self.runtime.allocate_task(
+            return self.runtime.allocate_task(
                 session=session,
                 task=task,
                 include_repair=self.allocation_include_repair,
                 block_on_required=self.block_on_allocation,
             )
+        return None
+
+    def _run_preplan_agents(
+        self,
+        session: AgentSession,
+        task: str,
+        allocation: TaskAllocation | None,
+    ) -> str | None:
+        if allocation is None:
+            return None
+        assignments = [
+            assignment
+            for assignment in allocation.assignments
+            if assignment.task_type in {TASK_REPO_SCAN, TASK_SUMMARIZE}
+        ]
+        if not assignments:
+            return None
+        base_context = ContextBuilder(self.workspace).build_for_task(task).text
+        outputs: list[str] = []
+        for assignment in assignments:
+            try:
+                selection = self._select_model(
+                    session=session,
+                    role=assignment.role,
+                    task_type=assignment.task_type,
+                    task=task,
+                    fallback_model_id=assignment.model_id,
+                    default_provider=self.provider,
+                )
+            except ModelError as exc:
+                self._record(
+                    session.session_id,
+                    "preplan_agent_skipped",
+                    {"agent_id": assignment.agent_id, "reason": str(exc)},
+                )
+                continue
+            if selection.quota_status is not None and not selection.quota_status.available:
+                self._record(
+                    session.session_id,
+                    "preplan_agent_skipped",
+                    {
+                        "agent_id": assignment.agent_id,
+                        "model_id": selection.model_id,
+                        "reason": "quota unavailable",
+                    },
+                )
+                continue
+            provider = self._provider_for(selection, self.provider)
+            response = provider.chat(
+                selection.model_id,
+                self._preplan_messages(
+                    assignment=assignment,
+                    task=task,
+                    base_context=base_context,
+                    previous_outputs=outputs,
+                ),
+            )
+            self._record_model_call(session, selection)
+            payload = {
+                "agent_id": assignment.agent_id,
+                "task_type": assignment.task_type,
+                "model_id": selection.model_id,
+                "content": response.content,
+            }
+            session.record("preplan_agent_completed", payload)
+            self._record(session.session_id, "preplan_agent_completed", payload)
+            outputs.append(f"{assignment.agent_id} ({selection.model_id}):\n{response.content}")
+        if not outputs:
+            return None
+        return "\n\n".join(outputs)
+
+    def _preplan_messages(
+        self,
+        *,
+        assignment: AgentAssignment,
+        task: str,
+        base_context: str,
+        previous_outputs: list[str],
+    ) -> list[ChatMessage]:
+        if assignment.task_type == TASK_REPO_SCAN:
+            system = (
+                "You are helmcode's scout agent. Use only the provided repository context. "
+                "Return concise bullets naming relevant files, likely change areas, and unknowns. "
+                "Do not propose a patch."
+            )
+        else:
+            system = (
+                "You are helmcode's summarizer agent. Compress the repository context and prior "
+                "agent findings into a concise implementation brief for the planning model. "
+                "Keep file names, constraints, risks, and verification hints. Do not propose a patch."
+            )
+        prior = "\n\n".join(previous_outputs) if previous_outputs else "None"
+        user = (
+            f"Task:\n{task}\n\n"
+            f"Repository context:\n{base_context}\n\n"
+            f"Prior pre-agent findings:\n{prior}"
+        )
+        return [ChatMessage(role="system", content=system), ChatMessage(role="user", content=user)]

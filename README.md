@@ -166,7 +166,7 @@ commands to control the session:
 /exit                         leave the session
 ```
 
-`helmcode run` performs the main Agent workflow: record a Coding Plan allocation, generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Required allocation agents are checked before provider calls; if a required coding or planning agent has no quota capacity, the run is blocked before spending another model request. Use `--yes` for non-interactive approval of the plan and patch confirmations.
+`helmcode run` performs the main Agent workflow: record a Coding Plan allocation, run any allocated cheap pre-plan agents, generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Required allocation agents are checked before provider calls; if a required coding or planning agent has no quota capacity, the run is blocked before spending another model request. Use `--yes` for non-interactive approval of the plan and patch confirmations.
 
 `helmcode plan` also records the Coding Plan allocation for observability, but it does not block on exhausted downstream coding quota. That keeps planning useful when you want to inspect the intended path before deciding whether to free quota, switch models, or wait for reset.
 
@@ -233,6 +233,13 @@ which work will spend coding-model quota, and whether a required agent is
 blocked before running the task. Use `--json` when another tool needs to
 consume the allocation directly.
 
+When allocation includes `scout` or `summarizer`, `helmcode plan` and
+`helmcode run` execute those pre-plan agents with the selected fast model before
+the planning call. Their findings are injected into the planning prompt and
+recorded as `preplan_agent_completed` session events. This lets cheap models do
+repository discovery and context compression while preserving expensive coding
+quota for patch generation, review, and repair.
+
 Agent profiles can be extended in `~/.helmcode/config.yaml`. Triggered agents
 are included when their trigger text appears in the task. If a triggered agent
 has the same task type as an optional built-in agent, it replaces that optional
@@ -272,9 +279,11 @@ All file edits are represented as unified diffs. Pending patches are stored unde
 
 Every `plan` and `run` workflow records local session events under
 `.helmcode/sessions.sqlite3` and `.helmcode/audit_log.jsonl`, including
-`task_allocated` events before model calls and `model_selected` or
-`model_called` events as execution proceeds. Use these commands to inspect what
-the agent allocated, selected, called, generated, applied, and verified:
+`task_allocated` events before model calls, `preplan_agent_completed` events for
+cheap scout/summarizer work, `model_blocked` events when quota prevents a real
+provider call, and `model_selected` or `model_called` events as execution
+proceeds. Use these commands to inspect what the agent allocated, selected,
+called, generated, applied, and verified:
 
 ```bash
 helmcode sessions

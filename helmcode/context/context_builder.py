@@ -31,7 +31,7 @@ class ContextBuilder:
         self.max_file_chars = max_file_chars
         self.secret_scanner = SecretScanner()
 
-    def build_for_task(self, task: str) -> BuiltContext:
+    def build_for_task(self, task: str, additional_sections: list[str] | None = None) -> BuiltContext:
         repo_map = RepoMap.build(self.workspace)
         relevant_files = self._select_relevant_files(task, repo_map.files)
         skill_context = render_skills_for_context(SkillStore(self.workspace.root_path).matching(task))
@@ -42,6 +42,8 @@ class ContextBuilder:
         ]
         if skill_context:
             sections.append("Matched skills:\n" + skill_context)
+        if additional_sections:
+            sections.extend(additional_sections)
         excerpts = self._build_file_excerpts(relevant_files)
         if excerpts:
             sections.append("Relevant file excerpts:\n" + "\n\n".join(excerpts))

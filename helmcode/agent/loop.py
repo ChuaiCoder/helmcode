@@ -41,8 +41,8 @@ class AgentLoop:
         self.coder = Coder(workspace, self.coding_provider, self.coding_model_id)
         self.executor = executor or Executor(workspace.root_path, permission_mode=permission_mode)
 
-    def plan(self, task: str) -> AgentPlan:
-        response: ModelResponse = self.planner.create_plan(task)
+    def plan(self, task: str, preplan_context: str | None = None) -> AgentPlan:
+        response: ModelResponse = self.planner.create_plan(task, preplan_context=preplan_context)
         self.state.plan = AgentPlan(content=response.content)
         return self.state.plan
 

@@ -12,8 +12,11 @@ class Planner:
         self.provider = provider
         self.model_id = model_id
 
-    def create_plan(self, task: str) -> ModelResponse:
-        built_context = ContextBuilder(self.workspace).build_for_task(task)
+    def create_plan(self, task: str, preplan_context: str | None = None) -> ModelResponse:
+        additional_sections = []
+        if preplan_context:
+            additional_sections.append("Coding Plan pre-agent findings:\n" + preplan_context)
+        built_context = ContextBuilder(self.workspace).build_for_task(task, additional_sections=additional_sections)
         messages = [
             ChatMessage(role="system", content=PLANNER_SYSTEM_PROMPT),
             ChatMessage(role="user", content=built_context.text),
