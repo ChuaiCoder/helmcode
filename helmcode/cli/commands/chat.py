@@ -8,7 +8,17 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from helmcode.cli.commands import agents, apply, config as config_command, diff, doctor, models, plan, run
+from helmcode.cli.commands import (
+    agents,
+    apply,
+    config as config_command,
+    diff,
+    doctor,
+    models,
+    plan,
+    run,
+    sessions,
+)
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
@@ -93,6 +103,15 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/quota":
         models.model_status(workspace=state.workspace_path)
+        return True
+    if command == "/sessions":
+        sessions.list_sessions_command(workspace=state.workspace_path)
+        return True
+    if command == "/events":
+        sessions.events_command(session_id=rest or None, workspace=state.workspace_path)
+        return True
+    if command == "/stats":
+        sessions.stats_command(workspace=state.workspace_path)
         return True
     if command == "/agents":
         if rest:
@@ -244,6 +263,9 @@ def _print_help(compact: bool) -> None:
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/models", "Show configured roles and model profiles."),
         ("/quota", "Show local quota estimates."),
+        ("/sessions", "Show recent local sessions."),
+        ("/events [session]", "Show recent audit events."),
+        ("/stats", "Show aggregate session stats."),
         ("/status", "Show workspace, mode, routing, and quota."),
         ("/diff", "Show pending patch."),
         ("/apply", "Apply pending patch."),

@@ -6,7 +6,7 @@ import typer
 from rich.console import Console
 
 from helmcode import __version__
-from helmcode.cli.commands import agents, apply, chat, config, diff, doctor, models, plan, run
+from helmcode.cli.commands import agents, apply, chat, config, diff, doctor, models, plan, run, sessions
 
 console = Console()
 app = typer.Typer(
@@ -17,6 +17,7 @@ app = typer.Typer(
 
 app.add_typer(models.app, name="models")
 app.add_typer(agents.app, name="agents")
+app.add_typer(sessions.app, name="sessions")
 
 
 @app.callback(invoke_without_command=True)
@@ -39,6 +40,8 @@ app.command("apply")(apply.apply_last_patch)
 app.command("diff")(diff.show_pending_diff)
 app.command("doctor")(doctor.doctor)
 app.command("config")(config.config_cmd)
+app.command("events")(sessions.events_command)
+app.command("stats")(sessions.stats_command)
 
 
 if __name__ == "__main__":

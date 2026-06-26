@@ -78,6 +78,9 @@ helmcode models recommend "help me add tests for the auth module"
 helmcode models status
 helmcode agents plan "refactor the routing layer and add tests"
 helmcode agents plan --json "refactor the routing layer and add tests"
+helmcode sessions
+helmcode events
+helmcode stats
 helmcode diff
 helmcode apply
 helmcode doctor
@@ -102,6 +105,9 @@ commands to control the session:
 /agents <task>                show quota-saving multi-agent assignment
 /models                       show configured roles and profiles
 /quota                        show local quota estimates
+/sessions                     show recent local sessions
+/events [session]             show recent audit events
+/stats                        show aggregate session stats
 /status                       show workspace and routing status
 /diff                         show pending patch
 /apply                        apply pending patch
@@ -153,6 +159,24 @@ The command policy blocks destructive commands such as `rm -rf`, `sudo`, recursi
 Sensitive files such as `.env`, private keys, credentials, secrets, tokens, and cloud credentials are not read by default.
 
 All file edits are represented as unified diffs. Pending patches are stored under `.helmcode/pending.patch` and can be inspected with `helmcode diff` before applying.
+
+## Sessions And Audit Events
+
+Every `plan` and `run` workflow records local session events under
+`.helmcode/sessions.sqlite3` and `.helmcode/audit_log.jsonl`. Use these
+commands to inspect what the agent selected, called, generated, applied, and
+verified:
+
+```bash
+helmcode sessions
+helmcode sessions --json
+helmcode sessions events <session-id>
+helmcode events --limit 20
+helmcode stats
+helmcode stats --json
+```
+
+These commands are local-only and do not call a provider.
 
 ## Example Tasks
 
