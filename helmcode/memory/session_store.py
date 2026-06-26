@@ -265,21 +265,31 @@ class SessionStore:
             for row in rows
         ]
 
-    def list_events_by_type(self, event_type: str, limit: int | None = None) -> list[SessionEvent]:
+    def list_events_by_type(
+        self,
+        event_type: str,
+        *,
+        session_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[SessionEvent]:
         query = """
             SELECT session_id, event_type, payload, created_at
             FROM events
             WHERE event_type = ?
-            ORDER BY id DESC
         """
-        params: tuple[object, ...]
+        params: list[object] = [event_type]
+        if session_id is not None:
+            query += " AND session_id = ?"
+            params.append(session_id)
+        query += " ORDER BY id DESC"
         if limit is None:
-            params = (event_type,)
+            query_params = tuple(params)
         else:
             query += " LIMIT ?"
-            params = (event_type, limit)
+            params.append(limit)
+            query_params = tuple(params)
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query, query_params).fetchall()
         return [
             SessionEvent(
                 session_id=row[0],

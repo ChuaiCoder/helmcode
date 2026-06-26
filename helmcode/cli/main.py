@@ -8,6 +8,7 @@ from rich.console import Console
 from helmcode import __version__
 from helmcode.cli.commands import (
     agents,
+    allocations,
     apply,
     checkpoints,
     chat,
@@ -67,6 +68,8 @@ app.command("code")(chat.chat_cmd)
 app.command("context")(context.context_cmd)
 app.command("cost")(cost.cost_cmd)
 app.command("savings")(savings.savings_cmd)
+app.command("allocations")(allocations.allocations_cmd)
+app.command("plans")(allocations.allocations_cmd)
 app.command("apply")(apply.apply_last_patch)
 app.command("diff")(diff.show_pending_diff)
 app.command("doctor")(doctor.doctor)

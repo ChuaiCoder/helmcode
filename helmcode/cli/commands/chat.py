@@ -10,6 +10,7 @@ from rich.table import Table
 
 from helmcode.cli.commands import (
     agents,
+    allocations,
     apply,
     checkpoints,
     config as config_command,
@@ -206,6 +207,14 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             output_json=False,
         )
         return True
+    if command in {"/allocations", "/plans"}:
+        allocations.allocations_cmd(
+            workspace=state.workspace_path,
+            session_id=rest or None,
+            limit=20,
+            output_json=False,
+        )
+        return True
     if command == "/skills":
         skills.list_skills(workspace=state.workspace_path)
         return True
@@ -398,6 +407,7 @@ def _print_help(compact: bool) -> None:
         ("/context <task>", "Preview model context without calling a provider."),
         ("/cost <task>", "Preview context, allocation, and quota cost."),
         ("/savings", "Show historical Coding Plan savings."),
+        ("/allocations [session]", "Show Coding Plan allocation history."),
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),

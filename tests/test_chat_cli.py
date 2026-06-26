@@ -194,6 +194,34 @@ def test_savings_command_reports_history(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_allocations_command_reports_history(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_allocations(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.allocations, "allocations_cmd", record_allocations)
+
+    assert chat.handle_interactive_line("/allocations session-a", state) is True
+    assert chat.handle_interactive_line("/plans", state) is True
+
+    assert calls == [
+        {
+            "workspace": tmp_path,
+            "session_id": "session-a",
+            "limit": 20,
+            "output_json": False,
+        },
+        {
+            "workspace": tmp_path,
+            "session_id": None,
+            "limit": 20,
+            "output_json": False,
+        },
+    ]
+
+
 def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

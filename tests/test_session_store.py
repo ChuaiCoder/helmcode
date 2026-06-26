@@ -63,11 +63,13 @@ def test_session_store_lists_recent_events_and_stats(tmp_path: Path) -> None:
     recent = store.list_recent_events(limit=2)
     allocations = store.list_events_by_type("task_allocated")
     latest_allocation = store.list_events_by_type("task_allocated", limit=1)
+    session_allocations = store.list_events_by_type("task_allocated", session_id="session-a")
     stats = store.stats()
 
     assert [event.event_type for event in recent] == ["command_result", "task_budget_blocked"]
     assert [event.session_id for event in allocations] == ["session-b", "session-a"]
     assert [event.session_id for event in latest_allocation] == ["session-b"]
+    assert [event.session_id for event in session_allocations] == ["session-a"]
     assert stats.session_count == 2
     assert stats.event_count == 8
     assert stats.model_call_count == 1
