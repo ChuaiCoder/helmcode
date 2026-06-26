@@ -247,6 +247,13 @@ which work will spend coding-model quota, and whether a required agent is
 blocked before running the task. Use `--json` when another tool needs to
 consume the allocation directly.
 
+The allocation contract includes `model_cost_tier` on every assignment and a
+structured `cost_breakdown` comparing the selected multi-agent path with a
+baseline that would run every phase on the configured coding model. The
+breakdown separates required cost from optional scout/summarizer/reviewer cost
+and groups selected cost by tier, so external Coding Plan tooling can explain
+why a route saves quota instead of only showing a final total.
+
 Allocation simulates quota reservations inside the proposed multi-agent plan
 without writing to the quota ledger. If two agents would use the same model and
 only one local request remains, optional agents are skipped first; if an earlier
@@ -272,6 +279,12 @@ cached scout/summarizer output and records `preplan_agent_cache_hit` instead of
 calling the fast model again. Use `--no-preplan-cache` on `helmcode plan` or
 `helmcode run`, or `/cache off` in an interactive session, when you need fresh
 pre-plan findings.
+
+Task classification treats explicit planning requests such as `plan the
+architecture change`, `explain ...`, and `analyze ...` as planning work even
+when they mention a change. Requests that ask to both plan and implement, or
+that directly say `implement`, `add`, `change`, or `refactor`, still route
+through the coding path.
 
 Agent profiles can be extended in `~/.helmcode/config.yaml`. Triggered agents
 are included when their trigger text appears in the task. If a triggered agent

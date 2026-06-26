@@ -13,11 +13,13 @@ from helmcode.core.config import (
 from helmcode.core.exceptions import ModelError
 from helmcode.models.quota import (
     TASK_CODE_PATCH,
+    TASK_PLAN,
     TASK_REVIEW,
     ModelCallRecord,
     QuotaAwareSelector,
     QuotaLedger,
     QuotaState,
+    classify_task,
 )
 
 
@@ -181,3 +183,15 @@ def test_review_selection_prefers_model_different_from_coding(tmp_path: Path) ->
     )
 
     assert selection.model_id == "main:review"
+
+
+def test_classify_leading_plan_intent_before_change_tokens() -> None:
+    assert classify_task("plan the architecture change") == TASK_PLAN
+
+
+def test_classify_plan_and_implement_as_coding_task() -> None:
+    assert classify_task("plan and implement the architecture change") == TASK_CODE_PATCH
+
+
+def test_classify_refactor_architecture_as_coding_task() -> None:
+    assert classify_task("refactor the architecture and implement safer routing") == TASK_CODE_PATCH

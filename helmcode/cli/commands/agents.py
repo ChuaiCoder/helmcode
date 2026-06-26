@@ -109,8 +109,18 @@ def print_allocation(allocation: TaskAllocation) -> None:
     summary.add_row("Complexity", allocation.complexity)
     summary.add_row("Strategy", allocation.strategy)
     summary.add_row("Estimated calls", str(allocation.estimated_calls))
+    summary.add_row("Baseline model", allocation.baseline_model_id or "unknown")
+    summary.add_row("Baseline calls", str(allocation.baseline_calls))
     summary.add_row("Baseline cost score", str(allocation.baseline_cost_score))
     summary.add_row("Selected cost score", str(allocation.selected_cost_score))
+    summary.add_row("Required cost score", str(allocation.required_cost_score))
+    summary.add_row("Optional cost score", str(allocation.optional_cost_score))
+    if allocation.selected_cost_by_tier:
+        tiers = ", ".join(
+            f"{tier}={score}"
+            for tier, score in sorted(allocation.selected_cost_by_tier.items())
+        )
+        summary.add_row("Selected by tier", tiers)
     if allocation.max_cost_score is not None:
         summary.add_row("Max cost score", str(allocation.max_cost_score))
         summary.add_row("Budget exceeded", "yes" if allocation.budget_exceeded else "no")
@@ -123,6 +133,7 @@ def print_allocation(allocation: TaskAllocation) -> None:
     table.add_column("Task type")
     table.add_column("Model")
     table.add_column("Required")
+    table.add_column("Tier")
     table.add_column("Cost")
     table.add_column("Quota")
     table.add_column("Reason")
@@ -134,6 +145,7 @@ def print_allocation(allocation: TaskAllocation) -> None:
             assignment.task_type,
             assignment.model_id,
             "yes" if assignment.required else "no",
+            assignment.model_cost_tier,
             str(assignment.estimated_cost_score),
             quota,
             assignment.reason,

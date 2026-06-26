@@ -372,7 +372,13 @@ class QuotaAwareSelector:
 
 
 def classify_task(task: str) -> str:
-    lowered = task.lower()
+    lowered = task.lower().strip()
+    if any(token in lowered for token in ["review", "\u5ba1\u67e5", "\u8bc4\u5ba1", "\u68c0\u67e5 patch"]):
+        return TASK_REVIEW
+    if any(token in lowered for token in ["repair", "fix failing", "test failed", "\u4fee\u590d\u5931\u8d25"]):
+        return TASK_REPAIR
+    if _has_leading_plan_intent(lowered):
+        return TASK_PLAN
     if any(
         token in lowered
         for token in [
@@ -387,10 +393,6 @@ def classify_task(task: str) -> str:
         ]
     ):
         return TASK_CODE_PATCH
-    if any(token in lowered for token in ["review", "\u5ba1\u67e5", "\u8bc4\u5ba1", "\u68c0\u67e5 patch"]):
-        return TASK_REVIEW
-    if any(token in lowered for token in ["repair", "fix failing", "test failed", "\u4fee\u590d\u5931\u8d25"]):
-        return TASK_REPAIR
     if any(
         token in lowered
         for token in ["plan", "\u8ba1\u5212", "\u65b9\u6848", "architecture", "\u67b6\u6784", "\u5206\u6790"]
@@ -401,6 +403,49 @@ def classify_task(task: str) -> str:
     if any(token in lowered for token in ["search", "find", "scan", "\u67e5\u627e", "\u626b\u63cf"]):
         return TASK_REPO_SCAN
     return TASK_CLASSIFY
+
+
+def _has_leading_plan_intent(lowered: str) -> bool:
+    if any(
+        token in lowered
+        for token in [
+            " and implement",
+            " then implement",
+            " and add",
+            " then add",
+            "\u5e76\u5b9e\u73b0",
+            "\u7136\u540e\u5b9e\u73b0",
+            "\u5e76\u5f00\u53d1",
+            "\u7136\u540e\u5f00\u53d1",
+            "\u5e76\u4fee\u6539",
+            "\u7136\u540e\u4fee\u6539",
+        ]
+    ):
+        return False
+    english_prefixes = (
+        "plan",
+        "explain",
+        "analyze",
+        "analyse",
+        "describe",
+        "design a plan",
+        "write a plan",
+    )
+    if any(lowered == prefix or lowered.startswith(f"{prefix} ") for prefix in english_prefixes):
+        return True
+    return any(
+        lowered.startswith(prefix)
+        for prefix in [
+            "\u8ba1\u5212",
+            "\u5236\u5b9a\u8ba1\u5212",
+            "\u5199\u4e00\u4e2a\u8ba1\u5212",
+            "\u65b9\u6848",
+            "\u8bbe\u8ba1\u65b9\u6848",
+            "\u5206\u6790",
+            "\u89e3\u91ca",
+            "\u8bf4\u660e",
+        ]
+    )
 
 
 def task_type_for_role(role: str, task: str = "") -> str:

@@ -64,6 +64,7 @@ class AgentAssignment:
     reason: str
     required: bool
     estimated_cost_score: int
+    model_cost_tier: str = "medium"
     quota_policy_id: str | None = None
     quota_remaining: int | None = None
     quota_remaining_after: int | None = None
@@ -79,6 +80,7 @@ class AgentAssignment:
             "reason": self.reason,
             "required": self.required,
             "estimated_cost_score": self.estimated_cost_score,
+            "model_cost_tier": self.model_cost_tier,
             "quota_policy_id": self.quota_policy_id,
             "quota_remaining": self.quota_remaining,
             "quota_remaining_after": self.quota_remaining_after,
@@ -95,6 +97,8 @@ class TaskAllocation:
     assignments: list[AgentAssignment]
     warnings: list[str]
     estimated_calls: int
+    baseline_calls: int
+    baseline_model_id: str | None
     baseline_cost_score: int
     selected_cost_score: int
     max_cost_score: int | None = None
@@ -111,6 +115,40 @@ class TaskAllocation:
     def budget_exceeded(self) -> bool:
         return self.max_cost_score is not None and self.selected_cost_score > self.max_cost_score
 
+    @property
+    def required_cost_score(self) -> int:
+        return sum(assignment.estimated_cost_score for assignment in self.assignments if assignment.required)
+
+    @property
+    def optional_cost_score(self) -> int:
+        return sum(assignment.estimated_cost_score for assignment in self.assignments if not assignment.required)
+
+    @property
+    def selected_cost_by_tier(self) -> dict[str, int]:
+        scores: dict[str, int] = {}
+        for assignment in self.assignments:
+            scores[assignment.model_cost_tier] = (
+                scores.get(assignment.model_cost_tier, 0) + assignment.estimated_cost_score
+            )
+        return scores
+
+    def cost_breakdown(self) -> dict[str, object]:
+        return {
+            "baseline": {
+                "model_id": self.baseline_model_id,
+                "calls": self.baseline_calls,
+                "cost_score": self.baseline_cost_score,
+            },
+            "selected": {
+                "calls": self.estimated_calls,
+                "cost_score": self.selected_cost_score,
+                "required_cost_score": self.required_cost_score,
+                "optional_cost_score": self.optional_cost_score,
+                "by_tier": self.selected_cost_by_tier,
+            },
+            "estimated_savings_score": self.estimated_savings_score,
+        }
+
     def to_dict(self) -> dict[str, object]:
         return {
             "task": self.task,
@@ -121,11 +159,14 @@ class TaskAllocation:
             "warnings": self.warnings,
             "blocked": self.blocked,
             "estimated_calls": self.estimated_calls,
+            "baseline_calls": self.baseline_calls,
+            "baseline_model_id": self.baseline_model_id,
             "baseline_cost_score": self.baseline_cost_score,
             "selected_cost_score": self.selected_cost_score,
             "max_cost_score": self.max_cost_score,
             "budget_exceeded": self.budget_exceeded,
             "estimated_savings_score": self.estimated_savings_score,
+            "cost_breakdown": self.cost_breakdown(),
         }
 
 
@@ -197,6 +238,7 @@ class CodingPlanTaskAllocator:
             profile.id: COST_SCORE.get(profile.cost_tier, COST_SCORE["medium"])
             for profile in config.model_profiles
         }
+        self.model_profile_tiers = {profile.id: profile.cost_tier for profile in config.model_profiles}
 
     def allocate(
         self,
@@ -277,7 +319,8 @@ class CodingPlanTaskAllocator:
                 reservations.append(self._reservation_for(agent, selection))
                 break
 
-        baseline_cost = self._baseline_cost(agent_ids)
+        baseline_model_id = self._baseline_model()
+        baseline_cost = self._baseline_cost(agent_ids, baseline_model_id)
         assignments = self._apply_budget_cap(assignments, warnings, max_cost_score)
         selected_cost = sum(assignment.estimated_cost_score for assignment in assignments)
         return TaskAllocation(
@@ -288,6 +331,8 @@ class CodingPlanTaskAllocator:
             assignments=assignments,
             warnings=warnings,
             estimated_calls=len(assignments),
+            baseline_calls=len(agent_ids),
+            baseline_model_id=baseline_model_id,
             baseline_cost_score=baseline_cost,
             selected_cost_score=selected_cost,
             max_cost_score=max_cost_score,
@@ -375,6 +420,7 @@ class CodingPlanTaskAllocator:
             reason=selection.reason,
             required=agent.required,
             estimated_cost_score=self._cost_for_model(selection.model_id),
+            model_cost_tier=self._tier_for_model(selection.model_id),
             quota_policy_id=quota_status.policy_id if quota_status else None,
             quota_remaining=quota_status.tightest_remaining if quota_status else None,
             quota_remaining_after=_remaining_after_reservation(
@@ -447,13 +493,18 @@ class CodingPlanTaskAllocator:
             reason="allocation reservation",
         )
 
-    def _baseline_cost(self, agent_ids: list[str]) -> int:
-        coding_model = self.config.model_roles.get(MODEL_ROLE_CODING) or self.config.model_roles.get("default")
-        coding_cost = self._cost_for_model(coding_model) if coding_model else COST_SCORE["high"]
+    def _baseline_model(self) -> str | None:
+        return self.config.model_roles.get(MODEL_ROLE_CODING) or self.config.model_roles.get("default")
+
+    def _baseline_cost(self, agent_ids: list[str], baseline_model_id: str | None) -> int:
+        coding_cost = self._cost_for_model(baseline_model_id) if baseline_model_id else COST_SCORE["high"]
         return len(agent_ids) * coding_cost
 
     def _cost_for_model(self, model_id: str) -> int:
         return self.model_profile_costs.get(model_id, COST_SCORE["medium"])
+
+    def _tier_for_model(self, model_id: str) -> str:
+        return self.model_profile_tiers.get(model_id, "medium")
 
     def _model_can_handle(self, model_id: str, agent: AgentProfile, fallback_model_id: str) -> bool:
         if model_id == fallback_model_id:

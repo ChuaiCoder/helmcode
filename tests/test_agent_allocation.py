@@ -237,7 +237,7 @@ def test_optional_reservation_is_released_for_required_agent_quota(tmp_path: Pat
     ledger = QuotaLedger(tmp_path / "quota.jsonl")
     allocator = CodingPlanTaskAllocator(config, QuotaAwareSelector(config, ledger))
 
-    allocation = allocator.allocate("plan repository architecture")
+    allocation = allocator.allocate("plan the architecture change")
 
     assert [assignment.agent_id for assignment in allocation.assignments] == ["planner"]
     assert any(
@@ -333,9 +333,23 @@ def test_allocation_to_dict_exposes_runtime_contract(tmp_path: Path) -> None:
     assert payload["blocked"] is False
     assert payload["max_cost_score"] == 3
     assert payload["budget_exceeded"] is True
+    assert payload["baseline_calls"] == 2
+    assert payload["baseline_model_id"] == "main:coder"
     assert payload["estimated_savings_score"] == allocation.estimated_savings_score
     first_assignment = payload["assignments"][0]
     assert first_assignment["agent_id"] == "planner"
+    assert first_assignment["model_cost_tier"] == "medium"
     assert first_assignment["quota_policy_id"] == "all_models"
     assert first_assignment["quota_remaining"] == 10
     assert first_assignment["quota_remaining_after"] == 9
+    assert payload["cost_breakdown"] == {
+        "baseline": {"model_id": "main:coder", "calls": 2, "cost_score": 8},
+        "selected": {
+            "calls": 2,
+            "cost_score": 6,
+            "required_cost_score": 6,
+            "optional_cost_score": 0,
+            "by_tier": {"medium": 2, "high": 4},
+        },
+        "estimated_savings_score": 2,
+    }
