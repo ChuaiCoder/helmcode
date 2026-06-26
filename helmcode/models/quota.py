@@ -253,10 +253,11 @@ class QuotaAwareSelector:
         fallback_model_id: str | None = None,
         override_model_id: str | None = None,
         prefer_different_from: str | None = None,
+        reserved_records: list[ModelCallRecord] | None = None,
     ) -> ModelSelection:
         task_type = task_type or task_type_for_role(role, task)
         if override_model_id:
-            status = self._status_for_model(override_model_id)
+            status = self._status_for_model(override_model_id, reserved_records=reserved_records)
             return ModelSelection(
                 model_id=override_model_id,
                 role=role,
@@ -267,7 +268,7 @@ class QuotaAwareSelector:
             )
         if self.routing_mode == "fixed" or not self._has_routing_data():
             model_id = fallback_model_id or self.fixed_selector.select(role)
-            status = self._status_for_model(model_id)
+            status = self._status_for_model(model_id, reserved_records=reserved_records)
             return ModelSelection(
                 model_id=model_id,
                 role=role,
@@ -292,7 +293,10 @@ class QuotaAwareSelector:
                 routing_mode="fixed",
             )
 
-        quota_state = QuotaState(self.config.quota_policies, self.ledger.load())
+        quota_state = QuotaState(
+            self.config.quota_policies,
+            [*self.ledger.load(), *(reserved_records or [])],
+        )
         exhausted: list[ModelQuotaStatus] = []
         for model_id in candidates:
             status = quota_state.status_for_model(model_id)
@@ -335,8 +339,15 @@ class QuotaAwareSelector:
     def _has_routing_data(self) -> bool:
         return bool(self.config.model_profiles or self.config.quota_policies)
 
-    def _status_for_model(self, model_id: str) -> ModelQuotaStatus:
-        return QuotaState(self.config.quota_policies, self.ledger.load()).status_for_model(model_id)
+    def _status_for_model(
+        self,
+        model_id: str,
+        reserved_records: list[ModelCallRecord] | None = None,
+    ) -> ModelQuotaStatus:
+        return QuotaState(
+            self.config.quota_policies,
+            [*self.ledger.load(), *(reserved_records or [])],
+        ).status_for_model(model_id)
 
     def _candidate_models(
         self,

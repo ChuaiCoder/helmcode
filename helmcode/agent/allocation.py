@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from helmcode.core.config import AgentProfileConfig, HelmcodeConfig
 from helmcode.core.constants import (
@@ -17,6 +18,7 @@ from helmcode.models.quota import (
     TASK_REPO_SCAN,
     TASK_REVIEW,
     TASK_SUMMARIZE,
+    ModelCallRecord,
     ModelSelection,
     QuotaAwareSelector,
     classify_task,
@@ -64,6 +66,7 @@ class AgentAssignment:
     estimated_cost_score: int
     quota_policy_id: str | None = None
     quota_remaining: int | None = None
+    quota_remaining_after: int | None = None
     quota_resets_at: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -78,6 +81,7 @@ class AgentAssignment:
             "estimated_cost_score": self.estimated_cost_score,
             "quota_policy_id": self.quota_policy_id,
             "quota_remaining": self.quota_remaining,
+            "quota_remaining_after": self.quota_remaining_after,
             "quota_resets_at": self.quota_resets_at,
         }
 
@@ -207,6 +211,7 @@ class CodingPlanTaskAllocator:
         assignments: list[AgentAssignment] = []
         warnings: list[str] = []
         coding_model: str | None = None
+        reserved_records: list[ModelCallRecord] = []
 
         for agent in self._ordered_agents(agent_ids):
             fallback_model_id = self._fallback_model(agent)
@@ -218,6 +223,7 @@ class CodingPlanTaskAllocator:
                     fallback_model_id=fallback_model_id,
                     override_model_id=override_model_id,
                     prefer_different_from=coding_model if agent.id == "reviewer" else None,
+                    reserved_records=reserved_records,
                 )
             except ModelError as exc:
                 if agent.required:
@@ -245,6 +251,7 @@ class CodingPlanTaskAllocator:
             if agent.id == "coder":
                 coding_model = selection.model_id
             assignments.append(self._assignment(agent, selection))
+            reserved_records.append(self._reservation_for(agent, selection))
 
         baseline_cost = self._baseline_cost(agent_ids)
         selected_cost = sum(assignment.estimated_cost_score for assignment in assignments)
@@ -341,7 +348,21 @@ class CodingPlanTaskAllocator:
             estimated_cost_score=self._cost_for_model(selection.model_id),
             quota_policy_id=quota_status.policy_id if quota_status else None,
             quota_remaining=quota_status.tightest_remaining if quota_status else None,
+            quota_remaining_after=_remaining_after_reservation(
+                quota_status.tightest_remaining if quota_status else None
+            ),
             quota_resets_at=resets_at,
+        )
+
+    def _reservation_for(self, agent: AgentProfile, selection: ModelSelection) -> ModelCallRecord:
+        unit = selection.quota_status.unit if selection.quota_status else "request"
+        return ModelCallRecord(
+            timestamp=datetime.now(UTC),
+            model_id=selection.model_id,
+            role=agent.role,
+            task_type=agent.task_type,
+            unit=unit,
+            reason="allocation reservation",
         )
 
     def _baseline_cost(self, agent_ids: list[str]) -> int:
@@ -458,3 +479,9 @@ def _dedupe(values: list[str]) -> list[str]:
             result.append(value)
             seen.add(value)
     return result
+
+
+def _remaining_after_reservation(remaining: int | None) -> int | None:
+    if remaining is None:
+        return None
+    return max(remaining - 1, 0)

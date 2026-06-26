@@ -120,6 +120,61 @@ def test_required_agent_quota_exhaustion_blocks_allocation(tmp_path: Path) -> No
     assert allocation.blocked is True
 
 
+def test_allocation_reserves_optional_agent_quota_without_recording_usage(tmp_path: Path) -> None:
+    config = _config()
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="fast_only",
+            model_patterns=["main:fast"],
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+        )
+    ]
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    allocator = CodingPlanTaskAllocator(config, QuotaAwareSelector(config, ledger))
+
+    allocation = allocator.allocate("refactor the whole project architecture and implement a large routing change")
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == [
+        "scout",
+        "planner",
+        "coder",
+        "reviewer",
+    ]
+    assert any(warning.startswith("skipped:summarizer:") for warning in allocation.warnings)
+    assert ledger.load() == []
+
+
+def test_allocation_reserves_required_agent_quota_and_blocks_overbooking(tmp_path: Path) -> None:
+    config = _config()
+    shared_model = "main:shared"
+    config.model_roles["default"] = shared_model
+    config.model_roles["planning"] = shared_model
+    config.model_roles["coding"] = shared_model
+    config.model_profiles = [
+        ModelProfileConfig(
+            id=shared_model,
+            preferred_for=["plan", "code_patch"],
+            cost_tier="high",
+        )
+    ]
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="shared_once",
+            model_patterns=[shared_model],
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+        )
+    ]
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    allocator = CodingPlanTaskAllocator(config, QuotaAwareSelector(config, ledger))
+
+    allocation = allocator.allocate("add a small helper")
+
+    assert [assignment.agent_id for assignment in allocation.assignments] == ["planner"]
+    assert any(warning.startswith("blocked:coder:") for warning in allocation.warnings)
+    assert allocation.blocked is True
+    assert ledger.load() == []
+
+
 def test_fixed_routing_allocation_still_blocks_required_exhausted_quota(tmp_path: Path) -> None:
     config = _config()
     config.routing_mode = "fixed"
@@ -208,3 +263,4 @@ def test_allocation_to_dict_exposes_runtime_contract(tmp_path: Path) -> None:
     assert first_assignment["agent_id"] == "planner"
     assert first_assignment["quota_policy_id"] == "all_models"
     assert first_assignment["quota_remaining"] == 10
+    assert first_assignment["quota_remaining_after"] == 9

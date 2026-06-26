@@ -13,7 +13,27 @@ model_roles:
   review: main_pool:configure-a-review-model
 shell_timeout_seconds: 120
 max_read_chars: 20000
-model_profiles: []
+model_profiles:
+  - id: main_pool:configure-a-fast-model
+    labels: [fast, cheap]
+    preferred_for: [classify, repo_scan, summarize]
+    cost_tier: low
+    fallback_models: []
+  - id: main_pool:configure-a-planning-model
+    labels: [planning]
+    preferred_for: [plan]
+    cost_tier: medium
+    fallback_models: []
+  - id: main_pool:configure-a-coding-model
+    labels: [coding]
+    preferred_for: [code_patch, repair]
+    cost_tier: high
+    fallback_models: []
+  - id: main_pool:configure-a-review-model
+    labels: [review]
+    preferred_for: [review]
+    cost_tier: medium
+    fallback_models: []
 quota_policies: []
 agent_profiles: []
 mcp_servers: []

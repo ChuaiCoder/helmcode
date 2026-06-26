@@ -142,6 +142,8 @@ def _quota_text(assignment: AgentAssignment) -> str:
     if assignment.quota_remaining is None:
         return assignment.quota_policy_id
     text = f"{assignment.quota_policy_id}: {assignment.quota_remaining} left"
+    if assignment.quota_remaining_after is not None:
+        text += f", {assignment.quota_remaining_after} after allocation"
     if assignment.quota_resets_at:
         text += f", resets {assignment.quota_resets_at}"
     return text

@@ -84,7 +84,9 @@ helmcode setup \
 ```
 
 `setup` also writes model profiles, so Coding Plan allocation can distinguish
-cheap scan/summarize calls from expensive coding calls.
+cheap scan/summarize calls from expensive coding calls. The default config ships
+placeholder profiles for the same roles, so allocation previews show the
+intended cost tiers even before real model names are configured.
 
 ## Common Commands
 
@@ -232,6 +234,13 @@ separate placeholder design. Use it to check which work will use cheap models,
 which work will spend coding-model quota, and whether a required agent is
 blocked before running the task. Use `--json` when another tool needs to
 consume the allocation directly.
+
+Allocation simulates quota reservations inside the proposed multi-agent plan
+without writing to the quota ledger. If two agents would use the same model and
+only one local request remains, the later optional agent is skipped or the later
+required agent blocks the plan before any provider call is made. Assignment JSON
+and the table output include projected remaining quota after each allocated
+call.
 
 When allocation includes `scout` or `summarizer`, `helmcode plan` and
 `helmcode run` execute those pre-plan agents with the selected fast model before

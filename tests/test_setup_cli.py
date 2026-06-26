@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 
 from helmcode.cli.main import app
 from helmcode.cli.commands.setup import build_setup_config
-from helmcode.core.config import load_config
+from helmcode.core.config import HelmcodeConfig, default_config_path, load_config, load_yaml
 
 
 def test_build_setup_config_creates_profiles_and_quota_policies() -> None:
@@ -44,6 +44,16 @@ def test_build_setup_config_creates_profiles_and_quota_policies() -> None:
         "review_daily",
     ]
     assert config.quota_policies[2].windows[0].limit == 10
+
+
+def test_default_config_includes_codingplan_cost_tiers() -> None:
+    config = HelmcodeConfig.model_validate(load_yaml(default_config_path()))
+    profiles = {profile.id: profile for profile in config.model_profiles}
+
+    assert profiles[config.model_roles["fast"]].cost_tier == "low"
+    assert "repo_scan" in profiles[config.model_roles["fast"]].preferred_for
+    assert profiles[config.model_roles["coding"]].cost_tier == "high"
+    assert "code_patch" in profiles[config.model_roles["coding"]].preferred_for
 
 
 def test_setup_command_writes_config_file(tmp_path: Path) -> None:
