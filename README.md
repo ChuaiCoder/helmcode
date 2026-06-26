@@ -151,6 +151,8 @@ helmcode mcp export --format claude
 helmcode sessions
 helmcode events
 helmcode stats
+helmcode tokens
+helmcode tokens --session <session-id>
 helmcode replay <session-id>
 helmcode compact <session-id>
 helmcode compact --list
@@ -204,6 +206,7 @@ commands to control the session:
 /compact [session]            compact session history into local markdown
 /prune-sessions               delete old session records after confirmation
 /stats                        show aggregate session stats
+/tokens [session]             show model token and cache usage
 /status                       show workspace and routing status
 /diff                         show pending patch
 /apply                        apply pending patch
@@ -259,6 +262,9 @@ history view.
 deterministic markdown archive under `.helmcode/compactions`, preserving the
 task, Coding Plan route, model calls, patch files, test outcomes, and timeline
 without another provider call.
+`helmcode tokens` aggregates recorded model usage and Coding Plan token
+estimates, including total tokens, cached tokens, cache hit rate, context token
+estimates, and token quota reservations.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to

@@ -244,6 +244,27 @@ def test_compact_command_compacts_session(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_tokens_command_reports_usage(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_tokens(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.tokens, "tokens_cmd", record_tokens)
+
+    assert chat.handle_interactive_line("/tokens session-a", state) is True
+
+    assert calls == [
+        {
+            "workspace": tmp_path,
+            "session_id": "session-a",
+            "limit": None,
+            "output_json": False,
+        }
+    ]
+
+
 def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

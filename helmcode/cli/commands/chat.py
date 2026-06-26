@@ -29,6 +29,7 @@ from helmcode.cli.commands import (
     savings,
     sessions,
     skills,
+    tokens,
     tools,
 )
 from helmcode.context.workspace import Workspace
@@ -178,6 +179,14 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/stats":
         sessions.stats_command(workspace=state.workspace_path)
+        return True
+    if command == "/tokens":
+        tokens.tokens_cmd(
+            workspace=state.workspace_path,
+            session_id=rest or None,
+            limit=None,
+            output_json=False,
+        )
         return True
     if command == "/agents":
         if rest:
@@ -437,6 +446,7 @@ def _print_help(compact: bool) -> None:
         ("/compact [session]", "Compact session history into local markdown."),
         ("/prune-sessions", "Delete old session records after confirmation."),
         ("/stats", "Show aggregate session stats."),
+        ("/tokens [session]", "Show model token and cache usage."),
         ("/status", "Show workspace, mode, routing, and quota."),
         ("/diff", "Show pending patch."),
         ("/apply", "Apply pending patch."),
