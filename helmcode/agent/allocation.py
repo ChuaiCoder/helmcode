@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -40,6 +41,7 @@ TASK_TYPE_LABELS = {
 }
 
 COST_SCORE = {"low": 1, "medium": 2, "high": 4}
+DEFAULT_AGENT_TOKEN_ESTIMATE = 2_000
 
 
 @dataclass(slots=True)
@@ -52,6 +54,7 @@ class AgentProfile:
     order: int
     required: bool = True
     triggers: tuple[str, ...] = ()
+    estimated_tokens: int = DEFAULT_AGENT_TOKEN_ESTIMATE
 
 
 @dataclass(slots=True)
@@ -66,6 +69,8 @@ class AgentAssignment:
     estimated_cost_score: int
     model_cost_tier: str = "medium"
     quota_policy_id: str | None = None
+    quota_unit: str | None = None
+    quota_reserved_amount: int = 1
     quota_remaining: int | None = None
     quota_remaining_after: int | None = None
     quota_resets_at: str | None = None
@@ -82,6 +87,8 @@ class AgentAssignment:
             "estimated_cost_score": self.estimated_cost_score,
             "model_cost_tier": self.model_cost_tier,
             "quota_policy_id": self.quota_policy_id,
+            "quota_unit": self.quota_unit,
+            "quota_reserved_amount": self.quota_reserved_amount,
             "quota_remaining": self.quota_remaining,
             "quota_remaining_after": self.quota_remaining_after,
             "quota_resets_at": self.quota_resets_at,
@@ -179,6 +186,7 @@ DEFAULT_AGENT_PROFILES = [
         purpose="cheap repository discovery before spending coding quota",
         order=10,
         required=False,
+        estimated_tokens=1_500,
     ),
     AgentProfile(
         id="summarizer",
@@ -188,6 +196,7 @@ DEFAULT_AGENT_PROFILES = [
         purpose="compress long task context before expensive calls",
         order=20,
         required=False,
+        estimated_tokens=1_500,
     ),
     AgentProfile(
         id="planner",
@@ -197,6 +206,7 @@ DEFAULT_AGENT_PROFILES = [
         purpose="reason about implementation sequence and verification",
         order=30,
         required=True,
+        estimated_tokens=2_500,
     ),
     AgentProfile(
         id="coder",
@@ -206,6 +216,7 @@ DEFAULT_AGENT_PROFILES = [
         purpose="produce the code patch",
         order=40,
         required=True,
+        estimated_tokens=4_000,
     ),
     AgentProfile(
         id="reviewer",
@@ -215,6 +226,7 @@ DEFAULT_AGENT_PROFILES = [
         purpose="independent patch review with a different model when available",
         order=50,
         required=False,
+        estimated_tokens=2_000,
     ),
     AgentProfile(
         id="fixer",
@@ -224,6 +236,7 @@ DEFAULT_AGENT_PROFILES = [
         purpose="repair failed tests without re-running the full planning path",
         order=60,
         required=False,
+        estimated_tokens=2_500,
     ),
 ]
 
@@ -281,7 +294,13 @@ class CodingPlanTaskAllocator:
                     if (
                         agent.required
                         and _looks_like_capacity_issue(message)
-                        and self._release_optional_reservation(assignments, reservations, warnings, agent, message)
+                        and self._release_optional_reservation(
+                            assignments,
+                            reservations,
+                            warnings,
+                            agent,
+                            message,
+                        )
                     ):
                         continue
                     if agent.required:
@@ -289,12 +308,19 @@ class CodingPlanTaskAllocator:
                     else:
                         warnings.append(f"skipped:{agent.id}:{exc}")
                     break
-                if selection.quota_status is not None and not selection.quota_status.available:
-                    message = self._quota_unavailable_message(selection)
+                if selection.quota_status is not None and not self._selection_has_capacity_for(agent, selection):
+                    message = self._quota_unavailable_message(agent, selection)
                     if (
                         agent.required
                         and _looks_like_capacity_issue(message)
-                        and self._release_optional_reservation(assignments, reservations, warnings, agent, message)
+                        and self._release_optional_reservation(
+                            assignments,
+                            reservations,
+                            warnings,
+                            agent,
+                            message,
+                            selection=selection,
+                        )
                     ):
                         continue
                     if agent.required:
@@ -411,6 +437,7 @@ class CodingPlanTaskAllocator:
     def _assignment(self, agent: AgentProfile, selection: ModelSelection) -> AgentAssignment:
         quota_status = selection.quota_status
         resets_at = quota_status.next_restore_at.isoformat() if quota_status and quota_status.next_restore_at else None
+        reserved_amount = self._reservation_amount(agent, selection)
         return AgentAssignment(
             agent_id=agent.id,
             role=agent.role,
@@ -422,9 +449,12 @@ class CodingPlanTaskAllocator:
             estimated_cost_score=self._cost_for_model(selection.model_id),
             model_cost_tier=self._tier_for_model(selection.model_id),
             quota_policy_id=quota_status.policy_id if quota_status else None,
+            quota_unit=quota_status.unit if quota_status else None,
+            quota_reserved_amount=reserved_amount,
             quota_remaining=quota_status.tightest_remaining if quota_status else None,
             quota_remaining_after=_remaining_after_reservation(
-                quota_status.tightest_remaining if quota_status else None
+                quota_status.tightest_remaining if quota_status else None,
+                reserved_amount,
             ),
             quota_resets_at=resets_at,
         )
@@ -468,10 +498,13 @@ class CodingPlanTaskAllocator:
         warnings: list[str],
         required_agent: AgentProfile,
         reason: str,
+        selection: ModelSelection | None = None,
     ) -> bool:
         for index in range(len(assignments) - 1, -1, -1):
             assignment = assignments[index]
             if assignment.required:
+                continue
+            if selection is not None and not self._reservation_affects_selection(reservations[index], selection):
                 continue
             assignments.pop(index)
             reservations.pop(index)
@@ -482,6 +515,17 @@ class CodingPlanTaskAllocator:
             return True
         return False
 
+    def _reservation_affects_selection(self, reservation: ModelCallRecord, selection: ModelSelection) -> bool:
+        status = selection.quota_status
+        if status is None:
+            return reservation.model_id == selection.model_id
+        if reservation.unit != status.unit:
+            return False
+        policy = next((policy for policy in self.config.quota_policies if policy.id == status.policy_id), None)
+        if policy is None:
+            return reservation.model_id == selection.model_id
+        return any(fnmatch.fnmatch(reservation.model_id, pattern) for pattern in policy.model_patterns)
+
     def _reservation_for(self, agent: AgentProfile, selection: ModelSelection) -> ModelCallRecord:
         unit = selection.quota_status.unit if selection.quota_status else "request"
         return ModelCallRecord(
@@ -490,8 +534,26 @@ class CodingPlanTaskAllocator:
             role=agent.role,
             task_type=agent.task_type,
             unit=unit,
+            amount=self._reservation_amount(agent, selection),
             reason="allocation reservation",
         )
+
+    def _selection_has_capacity_for(self, agent: AgentProfile, selection: ModelSelection) -> bool:
+        status = selection.quota_status
+        if status is None:
+            return True
+        if not status.available:
+            return False
+        remaining = status.tightest_remaining
+        if remaining is None:
+            return True
+        return remaining >= self._reservation_amount(agent, selection)
+
+    def _reservation_amount(self, agent: AgentProfile, selection: ModelSelection) -> int:
+        status = selection.quota_status
+        if status is not None and status.unit == "token":
+            return max(agent.estimated_tokens, 1)
+        return 1
 
     def _baseline_model(self) -> str | None:
         return self.config.model_roles.get(MODEL_ROLE_CODING) or self.config.model_roles.get("default")
@@ -514,10 +576,17 @@ class CodingPlanTaskAllocator:
             return False
         return agent.task_type in profile.preferred_for
 
-    def _quota_unavailable_message(self, selection: ModelSelection) -> str:
+    def _quota_unavailable_message(self, agent: AgentProfile, selection: ModelSelection) -> str:
         status = selection.quota_status
         if status is None:
             return f"{selection.model_id} has no quota capacity"
+        required_amount = self._reservation_amount(agent, selection)
+        remaining = status.tightest_remaining
+        if status.available and remaining is not None and remaining < required_amount:
+            return (
+                f"{selection.model_id} has insufficient quota capacity under {status.policy_id}; "
+                f"needs estimated {required_amount} {status.unit}, remaining {remaining}"
+            )
         reset_text = status.next_restore_at.isoformat() if status.next_restore_at else "unknown reset time"
         policy_text = status.policy_id or "unscoped quota policy"
         return f"{selection.model_id} has no quota capacity under {policy_text}; resets at {reset_text}"
@@ -579,6 +648,13 @@ def classify_complexity(task: str) -> str:
 def _merge_agent_profiles(configured: list[AgentProfileConfig]) -> list[AgentProfile]:
     profiles = {profile.id: profile for profile in DEFAULT_AGENT_PROFILES}
     for item in configured:
+        existing = profiles.get(item.id)
+        if item.estimated_tokens is not None:
+            estimated_tokens = item.estimated_tokens
+        elif existing is not None:
+            estimated_tokens = existing.estimated_tokens
+        else:
+            estimated_tokens = DEFAULT_AGENT_TOKEN_ESTIMATE
         profiles[item.id] = AgentProfile(
             id=item.id,
             role=item.role,
@@ -588,6 +664,7 @@ def _merge_agent_profiles(configured: list[AgentProfileConfig]) -> list[AgentPro
             order=item.order,
             required=item.required,
             triggers=tuple(item.triggers),
+            estimated_tokens=estimated_tokens,
         )
     return list(profiles.values())
 
@@ -622,10 +699,10 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
-def _remaining_after_reservation(remaining: int | None) -> int | None:
+def _remaining_after_reservation(remaining: int | None, amount: int = 1) -> int | None:
     if remaining is None:
         return None
-    return max(remaining - 1, 0)
+    return max(remaining - amount, 0)
 
 
 def _looks_like_capacity_issue(message: str) -> bool:

@@ -77,6 +77,7 @@ class AgentProfileConfig(BaseModel):
     order: int = 100
     required: bool = True
     triggers: list[str] = Field(default_factory=list)
+    estimated_tokens: int | None = Field(default=None, gt=0)
 
 
 class McpServerConfig(BaseModel):

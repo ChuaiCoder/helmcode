@@ -256,6 +256,13 @@ breakdown separates required cost from optional scout/summarizer/reviewer cost
 and groups selected cost by tier, so external Coding Plan tooling can explain
 why a route saves quota instead of only showing a final total.
 
+For quota policies with `unit: token`, allocation uses each agent profile's
+`estimated_tokens` value to simulate token reservations before provider calls.
+Built-in agents ship practical defaults, and custom `agent_profiles` can tune
+the estimate per role. The runtime still records real provider `total_tokens`
+after a call, so previews are conservative planning estimates while the ledger
+uses actual usage when available.
+
 Allocation simulates quota reservations inside the proposed multi-agent plan
 without writing to the quota ledger. If two agents would use the same model and
 only one local request remains, optional agents are skipped first; if an earlier
@@ -302,6 +309,7 @@ agent_profiles:
     purpose: review security-sensitive code changes
     order: 45
     required: false
+    estimated_tokens: 2000
     triggers: ["security", "auth"]
 ```
 

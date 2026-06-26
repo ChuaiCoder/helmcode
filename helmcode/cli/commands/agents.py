@@ -170,6 +170,9 @@ def _quota_text(assignment: AgentAssignment) -> str:
     if assignment.quota_remaining is None:
         return assignment.quota_policy_id
     text = f"{assignment.quota_policy_id}: {assignment.quota_remaining} left"
+    if assignment.quota_reserved_amount != 1:
+        unit = assignment.quota_unit or "unit"
+        text += f", reserves {assignment.quota_reserved_amount} {unit}"
     if assignment.quota_remaining_after is not None:
         text += f", {assignment.quota_remaining_after} after allocation"
     if assignment.quota_resets_at:

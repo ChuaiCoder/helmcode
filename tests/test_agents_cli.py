@@ -76,3 +76,25 @@ def test_quota_text_shows_projected_remaining_after_allocation() -> None:
     )
 
     assert agents._quota_text(assignment) == "fast_daily: 2 left, 1 after allocation"
+
+
+def test_quota_text_shows_token_reservation_amount() -> None:
+    assignment = AgentAssignment(
+        agent_id="planner",
+        role="planning",
+        task_type="plan",
+        purpose="plan",
+        model_id="main:planner",
+        reason="selected for plan",
+        required=True,
+        estimated_cost_score=2,
+        quota_policy_id="planning_tokens",
+        quota_unit="token",
+        quota_reserved_amount=2_500,
+        quota_remaining=3_000,
+        quota_remaining_after=500,
+    )
+
+    assert agents._quota_text(assignment) == (
+        "planning_tokens: 3000 left, reserves 2500 token, 500 after allocation"
+    )
