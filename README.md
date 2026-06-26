@@ -124,6 +124,7 @@ helmcode run --max-cost-score 8 "help me add tests for the auth module"
 helmcode run --no-preplan-cache "help me add tests for the auth module"
 helmcode plan "explain the routing flow in @helmcode/models/quota.py"
 helmcode context "explain the routing flow in @helmcode/models/quota.py"
+helmcode cost "explain the routing flow in @helmcode/models/quota.py"
 helmcode plan "explain this repository architecture"
 helmcode models recommend "help me add tests for the auth module"
 helmcode models status
@@ -175,6 +176,7 @@ commands to control the session:
 /cache on|off                 toggle cached scout/summarizer pre-plan findings
 /agents <task>                show quota-saving multi-agent assignment
 /context <task>               preview model context without calling a provider
+/cost <task>                  preview context, allocation, and quota cost
 /checkpoint [label]           create a local workspace checkpoint
 /checkpoints                  list local checkpoints
 /restore <id>                 restore a checkpoint after confirmation
@@ -234,6 +236,9 @@ reservations, so `helmcode agents plan` previews the extra quota cost before
 provider calls.
 `helmcode context <task>` previews the exact fitted context summary, explicit
 references, warnings, and estimated token cost without spending provider quota.
+`helmcode cost <task>` combines that context estimate with the Coding Plan
+allocation, selected cost score, estimated savings, budget status, and quota
+reservations so you can compare routes before spending provider quota.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to

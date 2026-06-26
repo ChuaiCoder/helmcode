@@ -13,6 +13,7 @@ from helmcode.cli.commands import (
     chat,
     config,
     context,
+    cost,
     diff,
     doctor,
     index,
@@ -63,6 +64,7 @@ app.command("plan")(plan.plan_task)
 app.command("chat")(chat.chat_cmd)
 app.command("code")(chat.chat_cmd)
 app.command("context")(context.context_cmd)
+app.command("cost")(cost.cost_cmd)
 app.command("apply")(apply.apply_last_patch)
 app.command("diff")(diff.show_pending_diff)
 app.command("doctor")(doctor.doctor)

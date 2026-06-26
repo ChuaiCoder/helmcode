@@ -143,6 +143,37 @@ def test_context_command_previews_context(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_cost_command_previews_cost(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(
+        workspace_path=tmp_path,
+        routing_mode="recommend",
+        forced_model="main:coder",
+        max_cost_score=6,
+    )
+    calls: list[dict[str, object]] = []
+
+    def record_cost(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.cost, "cost_cmd", record_cost)
+
+    assert chat.handle_interactive_line("/cost plan @README.md", state) is True
+
+    assert calls == [
+        {
+            "task": "plan @README.md",
+            "workspace": tmp_path,
+            "routing": "quota",
+            "model": "main:coder",
+            "include_repair": False,
+            "max_cost_score": 6,
+            "max_file_chars": 4_000,
+            "max_explicit_files": 8,
+            "output_json": False,
+        }
+    ]
+
+
 def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

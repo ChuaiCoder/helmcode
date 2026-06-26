@@ -14,6 +14,7 @@ from helmcode.cli.commands import (
     checkpoints,
     config as config_command,
     context,
+    cost,
     diff,
     doctor,
     index,
@@ -181,6 +182,20 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             output_json=False,
             max_file_chars=4_000,
             max_explicit_files=8,
+        )
+        return True
+    if command == "/cost":
+        _require_task(rest, "/cost")
+        cost.cost_cmd(
+            task=rest,
+            workspace=state.workspace_path,
+            routing="quota" if state.routing_mode == "recommend" else state.routing_mode,
+            model=state.forced_model,
+            include_repair=False,
+            max_cost_score=state.max_cost_score,
+            max_file_chars=4_000,
+            max_explicit_files=8,
+            output_json=False,
         )
         return True
     if command == "/skills":
@@ -373,6 +388,7 @@ def _print_help(compact: bool) -> None:
         ("/cache on|off", "Toggle cached scout/summarizer pre-plan findings."),
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/context <task>", "Preview model context without calling a provider."),
+        ("/cost <task>", "Preview context, allocation, and quota cost."),
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),
