@@ -451,6 +451,14 @@ coding-model quota, and whether a required agent is blocked before running the
 task. Use `--json` on `helmcode agents plan` or `helmcode models recommend` when
 another tool needs to consume the allocation directly.
 
+In quota routing, the selector first considers profiled models that explicitly
+list the agent task type in `preferred_for`, ordered by `cost_tier` and model id.
+The configured role model and default model remain fallbacks, so unprofiled
+legacy configs still work and `--routing fixed` continues to use the role
+mapping directly. This is the main Coding Plan quota-saving behavior: cheap
+models can handle scan, summarize, planning, or simple coding phases before the
+configured expensive coding model is spent.
+
 The allocation contract includes `model_cost_tier` on every assignment and a
 structured `cost_breakdown` comparing the selected multi-agent path with a
 baseline that would run every phase on the configured coding model. The

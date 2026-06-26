@@ -59,6 +59,79 @@ def test_old_config_without_profiles_keeps_fixed_selection(tmp_path: Path) -> No
     assert selection.routing_mode == "fixed"
 
 
+def test_quota_selection_prefers_lower_cost_profile_over_role_mapping(tmp_path: Path) -> None:
+    config = _config(
+        roles={"default": "main:fast", "coding": "main:strong"},
+        profiles=[
+            ModelProfileConfig(id="main:strong", preferred_for=[TASK_CODE_PATCH], cost_tier="high"),
+            ModelProfileConfig(id="main:cheap-code", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+        ],
+    )
+    selector = QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl"), routing_mode="quota")
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+
+    assert selection.model_id == "main:cheap-code"
+    assert selection.routing_mode == "quota"
+
+
+def test_fixed_selection_keeps_role_mapping_with_cheaper_profile(tmp_path: Path) -> None:
+    config = _config(
+        roles={"default": "main:fast", "coding": "main:strong"},
+        profiles=[
+            ModelProfileConfig(id="main:strong", preferred_for=[TASK_CODE_PATCH], cost_tier="high"),
+            ModelProfileConfig(id="main:cheap-code", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+        ],
+    )
+    selector = QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl"), routing_mode="fixed")
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+
+    assert selection.model_id == "main:strong"
+    assert selection.routing_mode == "fixed"
+
+
+def test_quota_selection_uses_next_lowest_cost_profile_when_cheapest_is_exhausted(
+    tmp_path: Path,
+) -> None:
+    policy = QuotaPolicyConfig(
+        id="cheap_only",
+        model_patterns=["main:cheap-code"],
+        windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=1)],
+    )
+    config = _config(
+        roles={"default": "main:fast", "coding": "main:strong"},
+        profiles=[
+            ModelProfileConfig(id="main:strong", preferred_for=[TASK_CODE_PATCH], cost_tier="high"),
+            ModelProfileConfig(id="main:cheap-code", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+            ModelProfileConfig(id="main:mid-code", preferred_for=[TASK_CODE_PATCH], cost_tier="medium"),
+        ],
+        policies=[policy],
+    )
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    ledger.record(model_id="main:cheap-code", role="coding", task_type=TASK_CODE_PATCH)
+    selector = QuotaAwareSelector(config, ledger, routing_mode="quota")
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+
+    assert selection.model_id == "main:mid-code"
+
+
 def test_fixed_selection_records_configured_quota_unit(tmp_path: Path) -> None:
     policy = QuotaPolicyConfig(
         id="prompt_calls",

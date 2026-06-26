@@ -463,7 +463,7 @@ class QuotaAwareSelector:
         candidates = [profile.id for profile in preferred]
         role_model = fallback_model_id or self.config.model_roles.get(role)
         if role_model:
-            candidates.insert(0, role_model)
+            candidates.append(role_model)
         default_model = self.config.model_roles.get(MODEL_ROLE_DEFAULT)
         if default_model:
             candidates.append(default_model)

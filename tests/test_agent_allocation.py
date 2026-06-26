@@ -107,6 +107,51 @@ def test_simple_coding_task_uses_direct_path(tmp_path: Path) -> None:
     assert allocation.strategy == "quota-saving direct path"
 
 
+def test_quota_allocation_uses_cheaper_profiled_coding_model(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:cheap-coder",
+            labels=["coding", "cheap"],
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+
+    allocation = _allocator(config, tmp_path).allocate("add a small helper")
+
+    assert [assignment.model_id for assignment in allocation.assignments] == [
+        "main:planner",
+        "main:cheap-coder",
+    ]
+    assert allocation.selected_cost_score == 3
+    assert allocation.estimated_savings_score == 5
+
+
+def test_fixed_allocation_keeps_configured_coding_role_when_cheaper_profile_exists(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    config.routing_mode = "fixed"
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:cheap-coder",
+            labels=["coding", "cheap"],
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+
+    allocation = _allocator(config, tmp_path).allocate("add a small helper")
+
+    assert [assignment.model_id for assignment in allocation.assignments] == [
+        "main:planner",
+        "main:coder",
+    ]
+    assert allocation.selected_cost_score == 6
+    assert allocation.estimated_savings_score == 2
+
+
 def test_plan_task_strategy_matches_plan_only_agents(tmp_path: Path) -> None:
     allocation = _allocator(_config(), tmp_path).allocate("plan repository architecture")
 
