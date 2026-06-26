@@ -92,6 +92,7 @@ cheap scan/summarize calls from expensive coding calls.
 helmcode
 helmcode chat
 helmcode code --mode run --routing quota
+helmcode init
 helmcode setup
 helmcode run "help me add tests for the auth module"
 helmcode plan "explain this repository architecture"
@@ -139,10 +140,16 @@ commands to control the session:
 /diff                         show pending patch
 /apply                        apply pending patch
 /doctor                       run local diagnostics
+/init                         create AGENTS.md project instructions
 /exit                         leave the session
 ```
 
 `helmcode run` performs the main Agent workflow: generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Use `--yes` for non-interactive approval of the plan and patch confirmations.
+
+`helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
+frameworks, test commands, and local agent workflow guidance. It refuses to
+overwrite an existing file unless `--force` is passed. Use `--dry-run` to
+preview the generated content.
 
 `helmcode agents plan` is a local Coding Plan allocation planner. It does not
 call a provider. It splits a task across built-in agents such as `scout`,

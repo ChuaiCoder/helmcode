@@ -6,7 +6,20 @@ import typer
 from rich.console import Console
 
 from helmcode import __version__
-from helmcode.cli.commands import agents, apply, chat, config, diff, doctor, models, plan, run, sessions, setup
+from helmcode.cli.commands import (
+    agents,
+    apply,
+    chat,
+    config,
+    diff,
+    doctor,
+    init_project,
+    models,
+    plan,
+    run,
+    sessions,
+    setup,
+)
 
 console = Console()
 app = typer.Typer(
@@ -45,6 +58,7 @@ app.command("stats")(sessions.stats_command)
 app.command("replay")(sessions.replay_command)
 app.command("prune-sessions")(sessions.prune_command)
 app.command("setup")(setup.setup_cmd)
+app.command("init")(init_project.init_cmd)
 
 
 if __name__ == "__main__":

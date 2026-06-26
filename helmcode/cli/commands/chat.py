@@ -14,6 +14,7 @@ from helmcode.cli.commands import (
     config as config_command,
     diff,
     doctor,
+    init_project,
     models,
     plan,
     run,
@@ -141,6 +142,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/config":
         config_command.config_cmd(show=True, init=False)
+        return True
+    if command == "/init":
+        init_project.init_cmd(workspace=state.workspace_path)
         return True
     if command == "/setup":
         console.print("Run `helmcode setup` outside the interactive session to configure providers and quotas.")
@@ -293,6 +297,7 @@ def _print_help(compact: bool) -> None:
         ("/diff", "Show pending patch."),
         ("/apply", "Apply pending patch."),
         ("/doctor", "Run local diagnostics."),
+        ("/init", "Create AGENTS.md project instructions."),
         ("/setup", "Show setup command hint."),
         ("/yes on|off", "Toggle auto-confirm for safe confirmations."),
         ("/tests on|off", "Toggle tests for /run."),
