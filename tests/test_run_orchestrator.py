@@ -451,7 +451,7 @@ def test_runner_records_coding_plan_allocation_event(tmp_path: Path) -> None:
     )
     runtime = AgentRuntime(
         workspace=workspace,
-        selector=QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl")),
+        selector=QuotaAwareSelector(config, QuotaLedger.for_workspace(workspace.root_path)),
         session_store=store,
     )
     runner = RunOrchestrator(
@@ -497,7 +497,7 @@ def test_runner_executes_preplan_agents_and_injects_context(tmp_path: Path) -> N
     )
     runtime = AgentRuntime(
         workspace=workspace,
-        selector=QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl")),
+        selector=QuotaAwareSelector(config, QuotaLedger.for_workspace(workspace.root_path)),
         session_store=store,
     )
     provider = PreplanProvider(patch)
@@ -523,6 +523,94 @@ def test_runner_executes_preplan_agents_and_injects_context(tmp_path: Path) -> N
     assert [payload["agent_id"] for payload in completed] == ["scout", "summarizer"]
     called_models = [payload["model_id"] for _sid, event_type, payload in store.events if event_type == "model_called"]
     assert called_models == ["fake:fast", "fake:fast", "fake:planning"]
+
+
+def test_runner_reuses_cached_preplan_agents_without_model_calls(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "fast": "fake:fast",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+            "review": "fake:review",
+        }
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, QuotaLedger.for_workspace(workspace.root_path)),
+        session_store=store,
+    )
+    provider = PreplanProvider("not a patch")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+    )
+    task = "refactor the whole project architecture and implement a safer greeting helper"
+
+    runner.plan(task)
+    runner.plan(task)
+
+    assert [model for model, _messages in provider.calls] == [
+        "fake:fast",
+        "fake:fast",
+        "fake:planning",
+        "fake:planning",
+    ]
+    cache_hits = [payload for _sid, event_type, payload in store.events if event_type == "preplan_agent_cache_hit"]
+    assert [payload["agent_id"] for payload in cache_hits] == ["scout", "summarizer"]
+    called_models = [payload["model_id"] for _sid, event_type, payload in store.events if event_type == "model_called"]
+    assert called_models == ["fake:fast", "fake:fast", "fake:planning", "fake:planning"]
+
+
+def test_runner_can_disable_preplan_cache(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "fast": "fake:fast",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+            "review": "fake:review",
+        }
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, QuotaLedger.for_workspace(workspace.root_path)),
+    )
+    provider = PreplanProvider("not a patch")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        preplan_cache_enabled=False,
+    )
+    task = "refactor the whole project architecture and implement a safer greeting helper"
+
+    runner.plan(task)
+    runner.plan(task)
+
+    assert [model for model, _messages in provider.calls] == [
+        "fake:fast",
+        "fake:fast",
+        "fake:planning",
+        "fake:fast",
+        "fake:fast",
+        "fake:planning",
+    ]
 
 
 def test_runner_blocks_when_required_allocation_has_no_quota(tmp_path: Path) -> None:

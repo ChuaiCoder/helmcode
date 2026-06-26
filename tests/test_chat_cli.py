@@ -12,6 +12,7 @@ def test_interactive_state_commands_update_mode_routing_and_model(tmp_path: Path
     assert chat.handle_interactive_line("/routing fixed", state) is True
     assert chat.handle_interactive_line("/model main:coder", state) is True
     assert chat.handle_interactive_line("/budget 5", state) is True
+    assert chat.handle_interactive_line("/cache off", state) is True
     assert chat.handle_interactive_line("/yes on", state) is True
     assert chat.handle_interactive_line("/tests off", state) is True
 
@@ -19,6 +20,7 @@ def test_interactive_state_commands_update_mode_routing_and_model(tmp_path: Path
     assert state.routing_mode == "fixed"
     assert state.forced_model == "main:coder"
     assert state.max_cost_score == 5
+    assert state.preplan_cache is False
     assert state.yes is True
     assert state.run_tests is False
 
@@ -43,6 +45,7 @@ def test_bare_prompt_uses_current_mode(monkeypatch, tmp_path: Path) -> None:
             "routing": "recommend",
             "model": "main:coder",
             "max_cost_score": None,
+            "no_preplan_cache": False,
         }
     ]
 
@@ -54,6 +57,7 @@ def test_run_command_passes_session_flags(monkeypatch, tmp_path: Path) -> None:
         routing_mode="quota",
         forced_model="main:coder",
         max_cost_score=6,
+        preplan_cache=False,
         yes=True,
         run_tests=False,
     )
@@ -75,6 +79,7 @@ def test_run_command_passes_session_flags(monkeypatch, tmp_path: Path) -> None:
             "routing": "quota",
             "model": "main:coder",
             "max_cost_score": 6,
+            "no_preplan_cache": True,
         }
     ]
 

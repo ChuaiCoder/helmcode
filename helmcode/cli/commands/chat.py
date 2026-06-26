@@ -41,6 +41,7 @@ class InteractiveState:
     routing_mode: str = "quota"
     forced_model: str | None = None
     max_cost_score: int | None = None
+    preplan_cache: bool = True
     yes: bool = False
     run_tests: bool = True
 
@@ -58,6 +59,11 @@ def chat_cmd(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Approve safe confirmations where allowed."),
     no_tests: bool = typer.Option(False, "--no-tests", help="Skip tests for /run."),
+    no_preplan_cache: bool = typer.Option(
+        False,
+        "--no-preplan-cache",
+        help="Disable cached scout/summarizer pre-plan findings for this session.",
+    ),
 ) -> None:
     """Start an interactive helmcode session."""
     config = load_config()
@@ -67,6 +73,7 @@ def chat_cmd(
         routing_mode=_normalize_routing(routing or config.routing_mode),
         forced_model=model,
         max_cost_score=max_cost_score,
+        preplan_cache=not no_preplan_cache,
         yes=yes,
         run_tests=not no_tests,
     )
@@ -120,6 +127,10 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/budget":
         _set_budget(state, rest)
+        return True
+    if command == "/cache":
+        state.preplan_cache = _parse_on_off(rest, current=state.preplan_cache)
+        console.print(f"Pre-plan cache: {'on' if state.preplan_cache else 'off'}")
         return True
     if command == "/index":
         index.status_index(workspace=state.workspace_path)
@@ -263,6 +274,7 @@ def _recommend(task: str, state: InteractiveState) -> None:
         routing="recommend",
         model=state.forced_model,
         max_cost_score=state.max_cost_score,
+        no_preplan_cache=not state.preplan_cache,
     )
 
 
@@ -286,6 +298,7 @@ def _plan(task: str, state: InteractiveState) -> None:
         routing=routing,
         model=state.forced_model,
         max_cost_score=state.max_cost_score,
+        no_preplan_cache=not state.preplan_cache,
     )
 
 
@@ -298,6 +311,7 @@ def _run(task: str, state: InteractiveState) -> None:
         routing=state.routing_mode,
         model=state.forced_model,
         max_cost_score=state.max_cost_score,
+        no_preplan_cache=not state.preplan_cache,
     )
 
 
@@ -316,6 +330,7 @@ def _print_banner(state: InteractiveState) -> None:
     table.add_row("Routing", state.routing_mode)
     table.add_row("Forced model", state.forced_model or "none")
     table.add_row("Budget", str(state.max_cost_score) if state.max_cost_score is not None else "none")
+    table.add_row("Pre-plan cache", "on" if state.preplan_cache else "off")
     console.print(table)
 
 
@@ -345,6 +360,7 @@ def _print_help(compact: bool) -> None:
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
         ("/budget <score|clear>", "Set a Coding Plan max cost score for plan/run."),
+        ("/cache on|off", "Toggle cached scout/summarizer pre-plan findings."),
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),

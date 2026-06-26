@@ -44,6 +44,11 @@ def run_task(
         min=1,
         help="Block before provider calls if Coding Plan selected cost score exceeds this value.",
     ),
+    no_preplan_cache: bool = typer.Option(
+        False,
+        "--no-preplan-cache",
+        help="Disable cached scout/summarizer pre-plan findings for this run.",
+    ),
 ) -> None:
     """Run one task through plan, patch generation, diff confirmation, apply, and tests."""
     try:
@@ -96,6 +101,7 @@ def run_task(
             block_on_allocation=True,
             allocation_include_repair=not no_tests,
             max_cost_score=max_cost_score,
+            preplan_cache_enabled=not no_preplan_cache,
         )
         with Progress(
             SpinnerColumn(),

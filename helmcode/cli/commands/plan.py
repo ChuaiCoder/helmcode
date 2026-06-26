@@ -30,6 +30,11 @@ def plan_task(
         min=1,
         help="Block before provider calls if Coding Plan selected cost score exceeds this value.",
     ),
+    no_preplan_cache: bool = typer.Option(
+        False,
+        "--no-preplan-cache",
+        help="Disable cached scout/summarizer pre-plan findings for this plan.",
+    ),
 ) -> None:
     """Generate a plan without modifying files."""
     config = load_config()
@@ -74,6 +79,7 @@ def plan_task(
         block_on_allocation=False,
         allocation_include_repair=False,
         max_cost_score=max_cost_score,
+        preplan_cache_enabled=not no_preplan_cache,
     )
     result = runner.plan(task)
     console.print(Panel(result.plan, title="Plan"))

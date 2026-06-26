@@ -13,6 +13,7 @@ from helmcode.context.context_builder import ContextBuilder
 from helmcode.context.workspace import Workspace
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
 from helmcode.core.exceptions import ModelError, PermissionDenied
+from helmcode.memory.preplan_cache import PreplanCache
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ChatMessage, ProviderAdapter
 from helmcode.models.quota import (
@@ -74,6 +75,7 @@ class RunOrchestrator:
         block_on_allocation: bool = True,
         allocation_include_repair: bool = False,
         max_cost_score: int | None = None,
+        preplan_cache_enabled: bool = True,
     ) -> None:
         self.workspace = workspace
         self.provider = provider
@@ -91,6 +93,7 @@ class RunOrchestrator:
         self.block_on_allocation = block_on_allocation
         self.allocation_include_repair = allocation_include_repair
         self.max_cost_score = max_cost_score
+        self.preplan_cache_enabled = preplan_cache_enabled
 
     def run(self, task: str, confirmed: bool, run_tests: bool = True) -> RunResult:
         prepared = self.prepare(task)
@@ -410,6 +413,7 @@ class RunOrchestrator:
         if not assignments:
             return None
         base_context = ContextBuilder(self.workspace).build_for_task(task).text
+        cache = PreplanCache(self.workspace.root_path) if self.preplan_cache_enabled else None
         outputs: list[str] = []
         for assignment in assignments:
             try:
@@ -440,6 +444,29 @@ class RunOrchestrator:
                 )
                 continue
             provider = self._provider_for(selection, self.provider)
+            cache_key = None
+            if cache is not None:
+                cache_key = cache.key_for(
+                    agent_id=assignment.agent_id,
+                    task_type=assignment.task_type,
+                    model_id=selection.model_id,
+                    task=task,
+                    base_context=base_context,
+                    previous_outputs=outputs,
+                )
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    payload = {
+                        "agent_id": assignment.agent_id,
+                        "task_type": assignment.task_type,
+                        "model_id": selection.model_id,
+                        "cache_key": cache_key,
+                        "content": cached.content,
+                    }
+                    session.record("preplan_agent_cache_hit", payload)
+                    self._record(session.session_id, "preplan_agent_cache_hit", payload)
+                    outputs.append(f"{assignment.agent_id} ({selection.model_id}):\n{cached.content}")
+                    continue
             response = provider.chat(
                 selection.model_id,
                 self._preplan_messages(
@@ -458,6 +485,14 @@ class RunOrchestrator:
             }
             session.record("preplan_agent_completed", payload)
             self._record(session.session_id, "preplan_agent_completed", payload)
+            if cache is not None and cache_key is not None:
+                cache.put(
+                    key=cache_key,
+                    agent_id=assignment.agent_id,
+                    task_type=assignment.task_type,
+                    model_id=selection.model_id,
+                    content=response.content,
+                )
             outputs.append(f"{assignment.agent_id} ({selection.model_id}):\n{response.content}")
         if not outputs:
             return None

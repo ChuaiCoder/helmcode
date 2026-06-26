@@ -98,6 +98,7 @@ helmcode init
 helmcode setup
 helmcode run "help me add tests for the auth module"
 helmcode run --max-cost-score 8 "help me add tests for the auth module"
+helmcode run --no-preplan-cache "help me add tests for the auth module"
 helmcode plan "explain this repository architecture"
 helmcode models recommend "help me add tests for the auth module"
 helmcode models status
@@ -143,6 +144,7 @@ commands to control the session:
 /routing fixed|quota|recommend set model routing for the session
 /model <provider:model|clear> force or clear a model override
 /budget <score|clear>         set a Coding Plan max cost score for plan/run
+/cache on|off                 toggle cached scout/summarizer pre-plan findings
 /agents <task>                show quota-saving multi-agent assignment
 /checkpoint [label]           create a local workspace checkpoint
 /checkpoints                  list local checkpoints
@@ -258,6 +260,14 @@ recorded as `preplan_agent_completed` session events. This lets cheap models do
 repository discovery and context compression while preserving expensive coding
 quota for patch generation, review, and repair.
 
+Pre-plan agent findings are cached under `.helmcode/preplan_cache.json` using a
+key that includes the agent, task, selected model, repository context, and prior
+pre-agent findings. Repeating the same task against the same context reuses
+cached scout/summarizer output and records `preplan_agent_cache_hit` instead of
+calling the fast model again. Use `--no-preplan-cache` on `helmcode plan` or
+`helmcode run`, or `/cache off` in an interactive session, when you need fresh
+pre-plan findings.
+
 Agent profiles can be extended in `~/.helmcode/config.yaml`. Triggered agents
 are included when their trigger text appears in the task. If a triggered agent
 has the same task type as an optional built-in agent, it replaces that optional
@@ -298,7 +308,8 @@ All file edits are represented as unified diffs. Pending patches are stored unde
 Every `plan` and `run` workflow records local session events under
 `.helmcode/sessions.sqlite3` and `.helmcode/audit_log.jsonl`, including
 `task_allocated` events before model calls, `preplan_agent_completed` events for
-cheap scout/summarizer work, `model_blocked` events when quota prevents a real
+cheap scout/summarizer work, `preplan_agent_cache_hit` events when cached
+findings avoid a model call, `model_blocked` events when quota prevents a real
 provider call, `task_budget_blocked` events when a cost-score cap prevents a
 run, and `model_selected` or `model_called` events as execution proceeds. Use
 these commands to inspect what the agent allocated, selected, called,
