@@ -16,3 +16,4 @@ max_read_chars: 20000
 model_profiles: []
 quota_policies: []
 agent_profiles: []
+mcp_servers: []

@@ -17,6 +17,7 @@ from helmcode.cli.commands import (
     doctor,
     index,
     init_project,
+    mcp,
     models,
     plan,
     run,
@@ -156,6 +157,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/tools":
         tools.list_tools()
+        return True
+    if command == "/mcp":
+        mcp.list_mcp()
         return True
     if command == "/tool":
         parts = rest.split(maxsplit=1)
@@ -328,6 +332,7 @@ def _print_help(compact: bool) -> None:
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),
+        ("/mcp", "List configured MCP servers."),
         ("/tool <name> <json>", "Run a local tool."),
         ("/checkpoint [label]", "Create a local workspace checkpoint."),
         ("/checkpoints", "List local checkpoints."),

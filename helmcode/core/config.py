@@ -15,6 +15,7 @@ RoutingMode = Literal["fixed", "quota", "recommend"]
 QuotaUnit = Literal["request", "prompt_call", "token", "lane", "credit"]
 QuotaWindowType = Literal["rolling", "calendar_day", "calendar_week", "calendar_month"]
 CostTier = Literal["low", "medium", "high"]
+McpTransport = Literal["stdio", "http", "sse"]
 
 
 class ProviderConfig(BaseModel):
@@ -78,6 +79,26 @@ class AgentProfileConfig(BaseModel):
     triggers: list[str] = Field(default_factory=list)
 
 
+class McpServerConfig(BaseModel):
+    id: str
+    transport: McpTransport = "stdio"
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    url: str | None = None
+    env: dict[str, str] = Field(default_factory=dict)
+    cwd: str | None = None
+    enabled: bool = True
+    description: str = ""
+
+    @model_validator(mode="after")
+    def validate_server(self) -> "McpServerConfig":
+        if self.transport == "stdio" and not self.command:
+            raise ValueError("stdio MCP servers require command")
+        if self.transport in {"http", "sse"} and not self.url:
+            raise ValueError("http/sse MCP servers require url")
+        return self
+
+
 class HelmcodeConfig(BaseModel):
     permission_mode: PermissionMode = DEFAULT_PERMISSION_MODE
     routing_mode: RoutingMode = "quota"
@@ -86,6 +107,7 @@ class HelmcodeConfig(BaseModel):
     model_profiles: list[ModelProfileConfig] = Field(default_factory=list)
     quota_policies: list[QuotaPolicyConfig] = Field(default_factory=list)
     agent_profiles: list[AgentProfileConfig] = Field(default_factory=list)
+    mcp_servers: list[McpServerConfig] = Field(default_factory=list)
     shell_timeout_seconds: int = 120
     max_read_chars: int = 20_000
 

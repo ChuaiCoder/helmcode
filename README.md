@@ -109,6 +109,9 @@ helmcode skills list
 helmcode skills match "optimize codingplan quota routing"
 helmcode tools list
 helmcode tools run read_file --param path=README.md
+helmcode mcp list
+helmcode mcp add filesystem --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg .
+helmcode mcp export --format claude
 helmcode sessions
 helmcode events
 helmcode stats
@@ -147,6 +150,7 @@ commands to control the session:
 /skills                       list built-in and project skills
 /skill-match <task>           show skills matched for a task
 /tools                        list local tools
+/mcp                          list configured MCP servers
 /tool <name> <json>           run a local tool
 /sessions                     show recent local sessions
 /events [session]             show recent audit events
@@ -200,6 +204,21 @@ are recorded in the local session audit log:
 helmcode tools list
 helmcode tools run read_file --param path=README.md --param end_line=40
 helmcode tools run shell --param "command=pytest -q" --permission edit
+```
+
+`helmcode mcp` manages MCP server configuration for future external tool
+runtime integration. This is configuration and validation only; it does not
+pretend to call MCP tools yet:
+
+```bash
+helmcode mcp add filesystem \
+  --command npx \
+  --arg -y \
+  --arg @modelcontextprotocol/server-filesystem \
+  --arg .
+helmcode mcp list
+helmcode mcp doctor
+helmcode mcp export --format claude
 ```
 
 `helmcode agents plan` is a local Coding Plan allocation planner. It does not

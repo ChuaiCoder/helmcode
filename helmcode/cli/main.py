@@ -16,6 +16,7 @@ from helmcode.cli.commands import (
     doctor,
     index,
     init_project,
+    mcp,
     models,
     plan,
     run,
@@ -39,6 +40,7 @@ app.add_typer(checkpoints.app, name="checkpoint")
 app.add_typer(index.app, name="index")
 app.add_typer(skills.app, name="skills")
 app.add_typer(tools.app, name="tools")
+app.add_typer(mcp.app, name="mcp")
 
 
 @app.callback(invoke_without_command=True)
