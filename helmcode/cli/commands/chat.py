@@ -13,6 +13,7 @@ from helmcode.cli.commands import (
     apply,
     checkpoints,
     config as config_command,
+    context,
     diff,
     doctor,
     index,
@@ -170,6 +171,16 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             _agents(rest, state)
         else:
             agents.list_agents()
+        return True
+    if command == "/context":
+        _require_task(rest, "/context")
+        context.context_cmd(
+            task=rest,
+            workspace=state.workspace_path,
+            show_text=False,
+            output_json=False,
+            max_file_chars=4_000,
+        )
         return True
     if command == "/skills":
         skills.list_skills(workspace=state.workspace_path)
@@ -360,6 +371,7 @@ def _print_help(compact: bool) -> None:
         ("/budget <score|clear>", "Set a Coding Plan max cost score for plan/run."),
         ("/cache on|off", "Toggle cached scout/summarizer pre-plan findings."),
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
+        ("/context <task>", "Preview model context without calling a provider."),
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),

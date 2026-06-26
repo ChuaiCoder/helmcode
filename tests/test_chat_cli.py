@@ -120,6 +120,28 @@ def test_agents_command_builds_allocation(monkeypatch, tmp_path: Path) -> None:
     assert isinstance(printed[0], FakeAllocation)
 
 
+def test_context_command_previews_context(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_context(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.context, "context_cmd", record_context)
+
+    assert chat.handle_interactive_line("/context explain @README.md", state) is True
+
+    assert calls == [
+        {
+            "task": "explain @README.md",
+            "workspace": tmp_path,
+            "show_text": False,
+            "output_json": False,
+            "max_file_chars": 4_000,
+        }
+    ]
+
+
 def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

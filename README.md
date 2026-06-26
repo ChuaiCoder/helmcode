@@ -123,6 +123,7 @@ helmcode run "help me add tests for the auth module"
 helmcode run --max-cost-score 8 "help me add tests for the auth module"
 helmcode run --no-preplan-cache "help me add tests for the auth module"
 helmcode plan "explain the routing flow in @helmcode/models/quota.py"
+helmcode context "explain the routing flow in @helmcode/models/quota.py"
 helmcode plan "explain this repository architecture"
 helmcode models recommend "help me add tests for the auth module"
 helmcode models status
@@ -173,6 +174,7 @@ commands to control the session:
 /budget <score|clear>         set a Coding Plan max cost score for plan/run
 /cache on|off                 toggle cached scout/summarizer pre-plan findings
 /agents <task>                show quota-saving multi-agent assignment
+/context <task>               preview model context without calling a provider
 /checkpoint [label]           create a local workspace checkpoint
 /checkpoints                  list local checkpoints
 /restore <id>                 restore a checkpoint after confirmation
@@ -215,6 +217,7 @@ Use `@relative/path` in a task to force specific local files into the model
 context:
 
 ```bash
+helmcode context "explain quota routing in @helmcode/models/quota.py"
 helmcode plan "explain quota routing in @helmcode/models/quota.py"
 helmcode run "add tests for @helmcode/context/context_builder.py"
 ```
@@ -224,6 +227,8 @@ files. Skipped references are reported in the generated context. For token quota
 policies, Coding Plan allocation adds an explicit context token estimate to the
 affected scout, summarizer, planner, coder, and repair reservations, so
 `helmcode agents plan` previews the extra quota cost before provider calls.
+`helmcode context <task>` previews the exact fitted context summary, explicit
+references, warnings, and estimated token cost without spending provider quota.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to
