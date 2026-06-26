@@ -50,6 +50,54 @@ def test_role_model_command_manages_scoped_overrides(tmp_path: Path) -> None:
     assert state.model_overrides is None
 
 
+def test_pro_command_arms_next_task_preset(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path, action_mode="recommend")
+    calls: list[dict[str, object]] = []
+
+    def record_run(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.run, "run_task", record_run)
+
+    assert chat.handle_interactive_line("/pro", state) is True
+    assert state.next_model_preset == "pro"
+    assert chat.handle_interactive_line("implement feature", state) is True
+
+    assert calls[0]["preset"] == "pro"
+    assert state.model_preset == "balanced"
+    assert state.next_model_preset is None
+
+
+def test_pro_command_runs_immediate_task_without_persisting(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(
+        workspace_path=tmp_path,
+        action_mode="run",
+        model_preset="economy",
+        next_model_preset="pro",
+    )
+    calls: list[dict[str, object]] = []
+
+    def record_run(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.run, "run_task", record_run)
+
+    assert chat.handle_interactive_line("/pro fix tests", state) is True
+
+    assert calls[0]["task"] == "fix tests"
+    assert calls[0]["preset"] == "pro"
+    assert state.model_preset == "economy"
+    assert state.next_model_preset is None
+
+
+def test_pro_off_clears_armed_next_preset(tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path, next_model_preset="pro")
+
+    assert chat.handle_interactive_line("/pro off", state) is True
+
+    assert state.next_model_preset is None
+
+
 def test_bare_prompt_uses_current_mode(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path, action_mode="recommend", forced_model="main:coder")
     calls: list[dict[str, object]] = []
@@ -288,6 +336,7 @@ def test_new_command_resets_interactive_state(tmp_path: Path) -> None:
         routing_mode="fixed",
         forced_model="main:coder",
         model_preset="pro",
+        next_model_preset="pro",
         model_overrides={"coding": "main:pro-coder"},
         max_cost_score=5,
         session_budget_score=12,
@@ -303,6 +352,7 @@ def test_new_command_resets_interactive_state(tmp_path: Path) -> None:
     assert state.routing_mode == "quota"
     assert state.forced_model is None
     assert state.model_preset == "balanced"
+    assert state.next_model_preset is None
     assert state.model_overrides is None
     assert state.max_cost_score is None
     assert state.session_budget_score is None

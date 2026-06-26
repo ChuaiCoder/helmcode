@@ -210,6 +210,7 @@ commands to control the session:
 /mode recommend|plan|run      set what bare prompt text does
 /routing fixed|quota|recommend set model routing for the session
 /preset economy|balanced|pro  set the Coding Plan model preset
+/pro [off|task]               use pro preset for the next task or this task
 /model <provider:model|clear> force or clear a model override
 /role-model <key=model|clear> override one Coding Plan role or agent model
 /budget <score|clear>         set a Coding Plan max cost score for plan/run
@@ -471,7 +472,9 @@ avoids high-cost profiled models when a low or medium candidate exists, while
 still falling back to configured role/default models if that is the only safe
 path. `pro` reverses the task-profile order and spends higher-cost profiled
 models first, subject to the same local quota checks. Interactive sessions expose
-the same control through `/preset`.
+the same control through `/preset`. Use `/pro` to arm the pro preset for only
+the next task, `/pro off` to clear it, or `/pro <task>` to run one immediate task
+with pro while keeping the long-lived session preset unchanged.
 
 Use `--role-model KEY=provider:model` when you want a Reasonix-style temporary
 model override without collapsing every phase onto one expensive model. Keys can

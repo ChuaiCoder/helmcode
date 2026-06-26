@@ -57,6 +57,7 @@ class InteractiveState:
     routing_mode: str = "quota"
     forced_model: str | None = None
     model_preset: str = "balanced"
+    next_model_preset: str | None = None
     max_cost_score: int | None = None
     session_budget_score: int | None = None
     budget_key: str = "default"
@@ -209,13 +210,14 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         sessions.replay_command(session_id=rest, workspace=state.workspace_path)
         return True
     if command == "/retry":
+        preset = _consume_model_preset(state)
         retry.retry_cmd(
             session_id=rest or None,
             workspace=state.workspace_path,
             mode=state.action_mode,
             routing=state.routing_mode,
             model=state.forced_model,
-            preset=state.model_preset,
+            preset=preset,
             role_model=_role_model_args(state),
             max_cost_score=state.max_cost_score,
             session_budget_score=state.session_budget_score,
@@ -277,12 +279,13 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/cost":
         _require_task(rest, "/cost")
+        preset = _consume_model_preset(state)
         cost.cost_cmd(
             task=rest,
             workspace=state.workspace_path,
             routing="quota" if state.routing_mode == "recommend" else state.routing_mode,
             model=state.forced_model,
-            preset=state.model_preset,
+            preset=preset,
             role_model=_role_model_args(state),
             include_repair=False,
             max_cost_score=state.max_cost_score,
@@ -293,11 +296,12 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/routes":
         _require_task(rest, "/routes")
+        preset = _consume_model_preset(state)
         routes.routes_cmd(
             task=rest,
             workspace=state.workspace_path,
             model=state.forced_model,
-            preset=state.model_preset,
+            preset=preset,
             role_model=_role_model_args(state),
             include_repair=False,
             max_cost_score=state.max_cost_score,
@@ -395,6 +399,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/preset":
         _set_preset(state, rest)
         return True
+    if command == "/pro":
+        _pro(rest, state)
+        return True
     if command == "/role-model":
         _set_role_model(state, rest)
         return True
@@ -422,18 +429,23 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         console.print(f"[yellow]Unknown command:[/yellow] {command}. Type /help.")
         return True
 
-    if state.action_mode == "recommend":
-        _recommend(line, state)
-    elif state.action_mode == "plan":
-        _plan(line, state)
-    elif state.action_mode == "run":
-        _run(line, state)
-    else:
-        raise ValueError(f"unknown mode: {state.action_mode}")
+    _dispatch_task(line, state)
     return True
 
 
-def _recommend(task: str, state: InteractiveState) -> None:
+def _dispatch_task(task: str, state: InteractiveState, *, preset: str | None = None) -> None:
+    if state.action_mode == "recommend":
+        _recommend(task, state, preset=preset)
+    elif state.action_mode == "plan":
+        _plan(task, state, preset=preset)
+    elif state.action_mode == "run":
+        _run(task, state, preset=preset)
+    else:
+        raise ValueError(f"unknown mode: {state.action_mode}")
+
+
+def _recommend(task: str, state: InteractiveState, *, preset: str | None = None) -> None:
+    preset = preset or _consume_model_preset(state)
     run.run_task(
         task=task,
         workspace=state.workspace_path,
@@ -441,20 +453,21 @@ def _recommend(task: str, state: InteractiveState) -> None:
         no_tests=not state.run_tests,
         routing="recommend",
         model=state.forced_model,
-        preset=state.model_preset,
+        preset=preset,
         role_model=_role_model_args(state),
         max_cost_score=state.max_cost_score,
         no_preplan_cache=not state.preplan_cache,
     )
 
 
-def _agents(task: str, state: InteractiveState) -> None:
+def _agents(task: str, state: InteractiveState, *, preset: str | None = None) -> None:
+    preset = preset or _consume_model_preset(state)
     allocation = agents.build_allocation(
         task=task,
         workspace=state.workspace_path,
         routing="quota" if state.routing_mode == "recommend" else state.routing_mode,
         model=state.forced_model,
-        model_preset=state.model_preset,
+        model_preset=preset,
         model_overrides=state.model_overrides,
         include_repair=False,
         max_cost_score=state.max_cost_score,
@@ -462,14 +475,15 @@ def _agents(task: str, state: InteractiveState) -> None:
     agents.print_allocation(allocation)
 
 
-def _plan(task: str, state: InteractiveState) -> None:
+def _plan(task: str, state: InteractiveState, *, preset: str | None = None) -> None:
+    preset = preset or _consume_model_preset(state)
     routing = "quota" if state.routing_mode == "recommend" else state.routing_mode
     plan.plan_task(
         task=task,
         workspace=state.workspace_path,
         routing=routing,
         model=state.forced_model,
-        preset=state.model_preset,
+        preset=preset,
         role_model=_role_model_args(state),
         max_cost_score=state.max_cost_score,
         session_budget_score=state.session_budget_score,
@@ -478,7 +492,8 @@ def _plan(task: str, state: InteractiveState) -> None:
     )
 
 
-def _run(task: str, state: InteractiveState) -> None:
+def _run(task: str, state: InteractiveState, *, preset: str | None = None) -> None:
+    preset = preset or _consume_model_preset(state)
     run.run_task(
         task=task,
         workspace=state.workspace_path,
@@ -486,7 +501,7 @@ def _run(task: str, state: InteractiveState) -> None:
         no_tests=not state.run_tests,
         routing=state.routing_mode,
         model=state.forced_model,
-        preset=state.model_preset,
+        preset=preset,
         role_model=_role_model_args(state),
         max_cost_score=state.max_cost_score,
         session_budget_score=state.session_budget_score,
@@ -509,6 +524,7 @@ def _print_banner(state: InteractiveState) -> None:
     table.add_row("Mode", state.action_mode)
     table.add_row("Routing", state.routing_mode)
     table.add_row("Preset", state.model_preset)
+    table.add_row("Next preset", state.next_model_preset or "none")
     table.add_row("Forced model", state.forced_model or "none")
     table.add_row("Role models", _role_model_text(state))
     table.add_row("Budget", str(state.max_cost_score) if state.max_cost_score is not None else "none")
@@ -549,6 +565,7 @@ def _print_help(compact: bool) -> None:
         ("/mode recommend|plan|run", "Set what bare prompt text does."),
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/preset economy|balanced|pro", "Set Coding Plan model preset."),
+        ("/pro [off|task]", "Use pro preset for the next task or this task."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
         ("/role-model <key=model|clear>", "Override one Coding Plan role or agent model."),
         ("/budget <score|clear>", "Set a Coding Plan max cost score for plan/run."),
@@ -609,9 +626,10 @@ def _print_help(compact: bool) -> None:
 def _prompt(state: InteractiveState) -> str:
     model = f" model={state.forced_model}" if state.forced_model else ""
     role_models = " role-models" if state.model_overrides else ""
+    next_preset = f" next={state.next_model_preset}" if state.next_model_preset else ""
     return (
         f"[bold]helmcode:{state.action_mode}:{state.routing_mode}:"
-        f"{state.model_preset}{model}{role_models}> [/bold]"
+        f"{state.model_preset}{next_preset}{model}{role_models}> [/bold]"
     )
 
 
@@ -654,7 +672,21 @@ def _set_preset(state: InteractiveState, value: str) -> None:
         console.print(f"Preset: {state.model_preset}")
         return
     state.model_preset = normalize_model_preset(value)
+    state.next_model_preset = None
     console.print(f"Preset: {state.model_preset}")
+
+
+def _pro(value: str, state: InteractiveState) -> None:
+    if value in {"off", "clear", "none"}:
+        state.next_model_preset = None
+        console.print("Next preset: none")
+        return
+    if value:
+        state.next_model_preset = None
+        _dispatch_task(value, state, preset="pro")
+        return
+    state.next_model_preset = "pro"
+    console.print("Next preset: pro")
 
 
 def _set_role_model(state: InteractiveState, value: str) -> None:
@@ -688,6 +720,7 @@ def _new_session_state(state: InteractiveState) -> None:
     state.routing_mode = _normalize_routing(config.routing_mode)
     state.forced_model = None
     state.model_preset = "balanced"
+    state.next_model_preset = None
     state.model_overrides = None
     state.max_cost_score = None
     state.session_budget_score = None
@@ -706,6 +739,14 @@ def _role_model_text(state: InteractiveState) -> str:
     if not state.model_overrides:
         return "none"
     return ", ".join(f"{key}={model_id}" for key, model_id in sorted(state.model_overrides.items()))
+
+
+def _consume_model_preset(state: InteractiveState) -> str:
+    if state.next_model_preset:
+        preset = state.next_model_preset
+        state.next_model_preset = None
+        return preset
+    return state.model_preset
 
 
 def _set_budget(state: InteractiveState, value: str) -> None:
