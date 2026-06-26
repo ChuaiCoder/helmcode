@@ -24,6 +24,7 @@ from helmcode.cli.commands import (
     models,
     plan,
     quota,
+    routes,
     run,
     savings,
     sessions,
@@ -70,6 +71,7 @@ app.command("code")(chat.chat_cmd)
 app.command("compact")(compact.compact_cmd)
 app.command("context")(context.context_cmd)
 app.command("cost")(cost.cost_cmd)
+app.command("routes")(routes.routes_cmd)
 app.command("savings")(savings.savings_cmd)
 app.command("allocations")(allocations.allocations_cmd)
 app.command("plans")(allocations.allocations_cmd)

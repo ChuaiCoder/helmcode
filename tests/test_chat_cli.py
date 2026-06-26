@@ -174,6 +174,33 @@ def test_cost_command_previews_cost(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_routes_command_compares_current_session_routing(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(
+        workspace_path=tmp_path,
+        forced_model="main:coder",
+        max_cost_score=7,
+    )
+    calls: list[dict[str, object]] = []
+
+    def record_routes(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.routes, "routes_cmd", record_routes)
+
+    assert chat.handle_interactive_line("/routes add tests", state) is True
+
+    assert calls == [
+        {
+            "task": "add tests",
+            "workspace": tmp_path,
+            "model": "main:coder",
+            "include_repair": False,
+            "max_cost_score": 7,
+            "output_json": False,
+        }
+    ]
+
+
 def test_savings_command_reports_history(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

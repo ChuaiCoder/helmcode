@@ -125,6 +125,7 @@ helmcode run --no-preplan-cache "help me add tests for the auth module"
 helmcode plan "explain the routing flow in @helmcode/models/quota.py"
 helmcode context "explain the routing flow in @helmcode/models/quota.py"
 helmcode cost "explain the routing flow in @helmcode/models/quota.py"
+helmcode routes "refactor the routing layer and add tests"
 helmcode savings
 helmcode allocations
 helmcode plans --session <session-id>
@@ -184,6 +185,7 @@ commands to control the session:
 /agents <task>                show quota-saving multi-agent assignment
 /context <task>               preview model context without calling a provider
 /cost <task>                  preview context, allocation, and quota cost
+/routes <task>                compare fixed/quota/forced Coding Plan routes
 /savings                      show historical Coding Plan savings
 /allocations [session]        show Coding Plan allocation history
 /plans [session]              alias for allocation history
@@ -251,6 +253,9 @@ references, warnings, and estimated token cost without spending provider quota.
 `helmcode cost <task>` combines that context estimate with the Coding Plan
 allocation, selected cost score, estimated savings, budget status, and quota
 reservations so you can compare routes before spending provider quota.
+`helmcode routes <task>` compares fixed role routing, quota-aware routing, and
+an optional forced-model route side by side, including selected cost, savings
+versus fixed routing, budget state, and each agent-to-model assignment.
 `helmcode savings` aggregates historical `task_allocated` events from local
 sessions to show baseline versus selected cost score, estimated savings rate,
 budget blocks, and cost distribution by agent and model.

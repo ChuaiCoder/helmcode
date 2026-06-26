@@ -25,6 +25,7 @@ from helmcode.cli.commands import (
     models,
     plan,
     quota,
+    routes,
     run,
     savings,
     sessions,
@@ -216,6 +217,17 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             max_cost_score=state.max_cost_score,
             max_file_chars=4_000,
             max_explicit_files=8,
+            output_json=False,
+        )
+        return True
+    if command == "/routes":
+        _require_task(rest, "/routes")
+        routes.routes_cmd(
+            task=rest,
+            workspace=state.workspace_path,
+            model=state.forced_model,
+            include_repair=False,
+            max_cost_score=state.max_cost_score,
             output_json=False,
         )
         return True
@@ -425,6 +437,7 @@ def _print_help(compact: bool) -> None:
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/context <task>", "Preview model context without calling a provider."),
         ("/cost <task>", "Preview context, allocation, and quota cost."),
+        ("/routes <task>", "Compare fixed/quota/forced Coding Plan routes."),
         ("/savings", "Show historical Coding Plan savings."),
         ("/allocations [session]", "Show Coding Plan allocation history."),
         ("/skills", "List built-in and project skills."),
