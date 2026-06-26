@@ -61,6 +61,7 @@ def _print_budget_table(rows: list[dict[str, object]]) -> None:
     table.add_column("Savings", justify="right")
     table.add_column("Blocked", justify="right")
     table.add_column("Remaining", justify="right")
+    table.add_column("Warning")
     table.add_column("Updated")
     for row in rows:
         table.add_row(
@@ -71,6 +72,7 @@ def _print_budget_table(rows: list[dict[str, object]]) -> None:
             str(row["estimated_savings_score"]),
             str(row["blocked_count"]),
             str(row.get("remaining_score", "")),
+            "yes" if row.get("budget_warning") else "",
             str(row.get("updated_at") or ""),
         )
     console.print(table)

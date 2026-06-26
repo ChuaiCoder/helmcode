@@ -11,6 +11,8 @@ from helmcode.core.constants import SESSION_DIR_NAME
 
 BUDGET_FILE_NAME = "coding_plan_budget.json"
 DEFAULT_BUDGET_KEY = "default"
+BUDGET_WARNING_NUMERATOR = 4
+BUDGET_WARNING_DENOMINATOR = 5
 
 
 @dataclass(slots=True)
@@ -31,6 +33,19 @@ class CodingPlanBudgetStatus:
     def would_exceed(self, allocation: TaskAllocation, max_score: int) -> bool:
         return self.selected_cost_score + allocation.selected_cost_score > max_score
 
+    def warning_threshold(self, max_score: int | None = None) -> int | None:
+        if max_score is None:
+            return None
+        return max(
+            (max_score * BUDGET_WARNING_NUMERATOR + BUDGET_WARNING_DENOMINATOR - 1)
+            // BUDGET_WARNING_DENOMINATOR,
+            1,
+        )
+
+    def budget_warning(self, max_score: int | None = None) -> bool:
+        threshold = self.warning_threshold(max_score)
+        return threshold is not None and self.selected_cost_score >= threshold
+
     def to_dict(self, max_score: int | None = None) -> dict[str, object]:
         payload: dict[str, object] = {
             "key": self.key,
@@ -44,6 +59,8 @@ class CodingPlanBudgetStatus:
         if max_score is not None:
             payload["max_score"] = max_score
             payload["remaining_score"] = self.remaining(max_score)
+            payload["warning_threshold_score"] = self.warning_threshold(max_score)
+            payload["budget_warning"] = self.budget_warning(max_score)
         return payload
 
 

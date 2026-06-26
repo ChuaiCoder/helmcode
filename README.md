@@ -320,6 +320,10 @@ task from a selected session, and sends it through `recommend`, `plan`, or
 or interrupted task explicit without copying prompts out of the audit log.
 `helmcode budget` reports cumulative Coding Plan budget usage for a selected
 ledger key or for all known keys. It is local-only and does not call a provider.
+When a `--max-score` is supplied, budget JSON and tables expose an 80% warning
+threshold. `plan` and `run` record `task_session_budget_warning` once an
+accepted allocation reaches that threshold, while the hard budget still blocks
+at 100%.
 `helmcode savings` aggregates historical `task_allocated` events from local
 sessions to show baseline versus selected cost score, estimated savings rate,
 budget blocks, and cost distribution by agent and model.

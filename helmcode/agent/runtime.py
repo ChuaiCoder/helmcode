@@ -92,15 +92,21 @@ class AgentRuntime:
                 self._record(session.session_id, "task_session_budget_blocked", blocked_payload)
                 raise ModelError("Coding Plan session budget exceeded: " + decision.reason)
             status = ledger.record_allocation(allocation, key=budget_key)
+            budget_warning = status.budget_warning(session_budget_score)
             reserved_payload = {
                 "budget_key": budget_key,
                 "selected_cost_score": allocation.selected_cost_score,
                 "session_selected_cost_score": status.selected_cost_score,
                 "session_budget_score": session_budget_score,
                 "remaining_score": status.remaining(session_budget_score),
+                "warning_threshold_score": status.warning_threshold(session_budget_score),
+                "budget_warning": budget_warning,
             }
             session.record("task_session_budget_reserved", reserved_payload)
             self._record(session.session_id, "task_session_budget_reserved", reserved_payload)
+            if budget_warning:
+                session.record("task_session_budget_warning", reserved_payload)
+                self._record(session.session_id, "task_session_budget_warning", reserved_payload)
         return allocation
 
     def select_model(

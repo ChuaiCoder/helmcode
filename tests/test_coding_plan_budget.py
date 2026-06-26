@@ -80,6 +80,8 @@ def test_coding_plan_budget_ledger_records_selected_cost(tmp_path: Path) -> None
     assert status.baseline_cost_score == 8
     assert status.estimated_savings_score == 2
     assert status.remaining(10) == 4
+    assert status.warning_threshold(10) == 8
+    assert status.budget_warning(10) is False
     decision = ledger.check(allocation, key="chat", max_score=10)
     assert decision.allowed is False
     assert decision.projected_selected_cost_score == 12
@@ -128,6 +130,47 @@ def test_runtime_blocks_before_provider_when_session_budget_exceeded(tmp_path: P
     assert status.blocked_count == 1
 
 
+def test_runtime_records_session_budget_warning_at_eighty_percent(tmp_path: Path) -> None:
+    config = _config()
+    store = RecordingSessionStore()
+    runtime = AgentRuntime(
+        workspace=Workspace.discover(tmp_path),
+        selector=QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl")),
+        session_store=store,
+    )
+    session = AgentSession(
+        session_id="session-1",
+        workspace_path=tmp_path,
+        user_task="add a small helper",
+        created_at=datetime.now(UTC),
+    )
+
+    allocation = runtime.allocate_task(
+        session=session,
+        task="add a small helper",
+        session_budget_score=7,
+        budget_key="chat",
+    )
+
+    assert allocation is not None
+    warnings = [
+        payload
+        for _, event_type, payload in store.events
+        if event_type == "task_session_budget_warning"
+    ]
+    assert warnings == [
+        {
+            "budget_key": "chat",
+            "selected_cost_score": 6,
+            "session_selected_cost_score": 6,
+            "session_budget_score": 7,
+            "remaining_score": 1,
+            "warning_threshold_score": 6,
+            "budget_warning": True,
+        }
+    ]
+
+
 def test_budget_cli_outputs_json_status(tmp_path: Path) -> None:
     ledger = CodingPlanBudgetLedger.for_workspace(tmp_path)
     ledger.record_allocation(_allocation(tmp_path), key="chat")
@@ -142,6 +185,24 @@ def test_budget_cli_outputs_json_status(tmp_path: Path) -> None:
     assert payload[0]["key"] == "chat"
     assert payload[0]["selected_cost_score"] == 6
     assert payload[0]["remaining_score"] == 4
+    assert payload[0]["warning_threshold_score"] == 8
+    assert payload[0]["budget_warning"] is False
+
+
+def test_budget_cli_outputs_warning_status(tmp_path: Path) -> None:
+    ledger = CodingPlanBudgetLedger.for_workspace(tmp_path)
+    ledger.record_allocation(_allocation(tmp_path), key="chat")
+
+    result = CliRunner().invoke(
+        app,
+        ["budget", "--workspace", str(tmp_path), "--key", "chat", "--max-score", "7", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload[0]["warning_threshold_score"] == 6
+    assert payload[0]["budget_warning"] is True
+    assert payload[0]["remaining_score"] == 1
 
 
 def test_budget_cli_resets_key(tmp_path: Path) -> None:
