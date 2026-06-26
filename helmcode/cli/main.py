@@ -20,10 +20,12 @@ from helmcode.cli.commands import (
     doctor,
     index,
     init_project,
+    keys,
     mcp,
     models,
     plan,
     quota,
+    retry,
     routes,
     run,
     savings,
@@ -66,6 +68,7 @@ def main(
 
 app.command("run")(run.run_task)
 app.command("plan")(plan.plan_task)
+app.command("retry")(retry.retry_cmd)
 app.command("chat")(chat.chat_cmd)
 app.command("code")(chat.chat_cmd)
 app.command("compact")(compact.compact_cmd)
@@ -75,6 +78,7 @@ app.command("routes")(routes.routes_cmd)
 app.command("savings")(savings.savings_cmd)
 app.command("allocations")(allocations.allocations_cmd)
 app.command("plans")(allocations.allocations_cmd)
+app.command("keys")(keys.keys_cmd)
 app.command("apply")(apply.apply_last_patch)
 app.command("diff")(diff.show_pending_diff)
 app.command("doctor")(doctor.doctor)

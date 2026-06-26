@@ -126,6 +126,7 @@ helmcode plan "explain the routing flow in @helmcode/models/quota.py"
 helmcode context "explain the routing flow in @helmcode/models/quota.py"
 helmcode cost "explain the routing flow in @helmcode/models/quota.py"
 helmcode routes "refactor the routing layer and add tests"
+helmcode retry --mode plan
 helmcode savings
 helmcode allocations
 helmcode plans --session <session-id>
@@ -162,6 +163,8 @@ helmcode prune-sessions --keep 20
 helmcode diff
 helmcode apply
 helmcode doctor
+helmcode doctor --probe-models
+helmcode keys
 helmcode config
 helmcode models sync
 helmcode models list
@@ -177,6 +180,9 @@ commands to control the session:
 /recommend <task>             show Coding Plan allocation without calling a provider
 /plan <task>                  generate a plan
 /run <task>                   run plan, patch, review, apply confirmation, tests
+/retry [session]              retry latest or selected session task with current mode
+/new                          reset the current interactive state
+/clear                        clear the screen and redraw session status
 /mode recommend|plan|run      set what bare prompt text does
 /routing fixed|quota|recommend set model routing for the session
 /model <provider:model|clear> force or clear a model override
@@ -193,6 +199,7 @@ commands to control the session:
 /checkpoints                  list local checkpoints
 /restore <id>                 restore a checkpoint after confirmation
 /models                       show configured roles and profiles
+/keys                         show provider key readiness without printing secrets
 /quota [history|reset]        show or manage local quota estimates
 /index                        show local file index status
 /changed                      show files changed since index build
@@ -256,6 +263,10 @@ reservations so you can compare routes before spending provider quota.
 `helmcode routes <task>` compares fixed role routing, quota-aware routing, and
 an optional forced-model route side by side, including selected cost, savings
 versus fixed routing, budget state, and each agent-to-model assignment.
+`helmcode retry [session]` reuses the latest recorded user task, or the latest
+task from a selected session, and sends it through `recommend`, `plan`, or
+`run` mode with the current routing options. This keeps recovery from a failed
+or interrupted task explicit without copying prompts out of the audit log.
 `helmcode savings` aggregates historical `task_allocated` events from local
 sessions to show baseline versus selected cost score, estimated savings rate,
 budget blocks, and cost distribution by agent and model.
@@ -270,6 +281,9 @@ without another provider call.
 `helmcode tokens` aggregates recorded model usage and Coding Plan token
 estimates, including total tokens, cached tokens, cache hit rate, context token
 estimates, and token quota reservations.
+`helmcode keys` shows provider environment variable readiness without printing
+secret values. `helmcode doctor` is local-first; pass `--probe-models` when you
+want it to call configured provider `/models` endpoints.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to

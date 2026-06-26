@@ -201,6 +201,83 @@ def test_routes_command_compares_current_session_routing(monkeypatch, tmp_path: 
     ]
 
 
+def test_retry_command_uses_current_session_flags(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(
+        workspace_path=tmp_path,
+        action_mode="plan",
+        routing_mode="quota",
+        forced_model="main:planner",
+        max_cost_score=8,
+        preplan_cache=False,
+        yes=True,
+        run_tests=False,
+    )
+    calls: list[dict[str, object]] = []
+
+    def record_retry(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.retry, "retry_cmd", record_retry)
+
+    assert chat.handle_interactive_line("/retry session-a", state) is True
+
+    assert calls == [
+        {
+            "session_id": "session-a",
+            "workspace": tmp_path,
+            "mode": "plan",
+            "routing": "quota",
+            "model": "main:planner",
+            "max_cost_score": 8,
+            "yes": True,
+            "no_tests": True,
+            "no_preplan_cache": True,
+        }
+    ]
+
+
+def test_new_command_resets_interactive_state(tmp_path: Path) -> None:
+    state = chat.InteractiveState(
+        workspace_path=tmp_path,
+        action_mode="run",
+        routing_mode="fixed",
+        forced_model="main:coder",
+        max_cost_score=5,
+        preplan_cache=False,
+        yes=True,
+        run_tests=False,
+    )
+
+    assert chat.handle_interactive_line("/new", state) is True
+
+    assert state.action_mode == "recommend"
+    assert state.routing_mode == "quota"
+    assert state.forced_model is None
+    assert state.max_cost_score is None
+    assert state.preplan_cache is True
+    assert state.yes is False
+    assert state.run_tests is True
+
+
+def test_keys_command_shows_provider_status(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_keys(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.keys, "keys_cmd", record_keys)
+
+    assert chat.handle_interactive_line("/keys", state) is True
+
+    assert calls == [
+        {
+            "config_path": None,
+            "output_json": False,
+        }
+    ]
+
+
 def test_savings_command_reports_history(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

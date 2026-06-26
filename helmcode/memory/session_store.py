@@ -48,6 +48,20 @@ class SessionSummary:
 
 
 @dataclass(slots=True)
+class SessionTask:
+    session_id: str
+    task: str
+    created_at: datetime
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "task": self.task,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+@dataclass(slots=True)
 class SessionStats:
     session_count: int
     event_count: int
@@ -228,6 +242,39 @@ class SessionStore:
             updated_at=datetime.fromisoformat(row[2]),
             event_count=int(row[3]),
             task=task,
+        )
+
+    def latest_task(self, session_id: str | None = None) -> SessionTask | None:
+        if session_id:
+            query = """
+                SELECT session_id, payload, created_at
+                FROM events
+                WHERE session_id = ? AND event_type = 'user_message'
+                ORDER BY id DESC
+                LIMIT 1
+            """
+            params: tuple[object, ...] = (session_id,)
+        else:
+            query = """
+                SELECT session_id, payload, created_at
+                FROM events
+                WHERE event_type = 'user_message'
+                ORDER BY id DESC
+                LIMIT 1
+            """
+            params = ()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(query, params).fetchone()
+        if row is None:
+            return None
+        payload = _load_payload(row[1])
+        content = payload.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return None
+        return SessionTask(
+            session_id=row[0],
+            task=content,
+            created_at=datetime.fromisoformat(row[2]),
         )
 
     def list_recent_events(

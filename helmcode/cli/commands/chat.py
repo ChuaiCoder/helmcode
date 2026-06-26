@@ -21,10 +21,12 @@ from helmcode.cli.commands import (
     doctor,
     index,
     init_project,
+    keys,
     mcp,
     models,
     plan,
     quota,
+    retry,
     routes,
     run,
     savings,
@@ -124,8 +126,18 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/help":
         _print_help(compact=False)
         return True
+    if command == "/new":
+        _new_session_state(state)
+        return True
+    if command == "/clear":
+        console.clear()
+        _print_banner(state)
+        return True
     if command == "/status":
         _print_status(state)
+        return True
+    if command == "/keys":
+        keys.keys_cmd(config_path=None, output_json=False)
         return True
     if command == "/models":
         models.list_models()
@@ -155,6 +167,19 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/replay":
         _require_task(rest, "/replay")
         sessions.replay_command(session_id=rest, workspace=state.workspace_path)
+        return True
+    if command == "/retry":
+        retry.retry_cmd(
+            session_id=rest or None,
+            workspace=state.workspace_path,
+            mode=state.action_mode,
+            routing=state.routing_mode,
+            model=state.forced_model,
+            max_cost_score=state.max_cost_score,
+            yes=state.yes,
+            no_tests=not state.run_tests,
+            no_preplan_cache=not state.preplan_cache,
+        )
         return True
     if command == "/session-diff":
         parts = rest.split()
@@ -429,6 +454,9 @@ def _print_help(compact: bool) -> None:
         ("/recommend <task>", "Show Coding Plan allocation without calling a provider."),
         ("/plan <task>", "Generate a plan through the selected planning model."),
         ("/run <task>", "Run plan, patch, review, apply confirmation, and tests."),
+        ("/retry [session]", "Retry the latest task using the current mode and routing."),
+        ("/new", "Reset the current interactive state."),
+        ("/clear", "Clear the screen and redraw the session status."),
         ("/mode recommend|plan|run", "Set what bare prompt text does."),
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
@@ -449,6 +477,7 @@ def _print_help(compact: bool) -> None:
         ("/checkpoints", "List local checkpoints."),
         ("/restore <id>", "Restore a checkpoint after confirmation."),
         ("/models", "Show configured roles and model profiles."),
+        ("/keys", "Show provider key readiness without printing secrets."),
         ("/quota [history|reset]", "Show or manage local quota estimates."),
         ("/index", "Show local file index status."),
         ("/changed", "Show files changed since index build."),
@@ -517,6 +546,18 @@ def _set_model(state: InteractiveState, value: str) -> None:
     else:
         state.forced_model = value
     console.print(f"Forced model: {state.forced_model or 'none'}")
+
+
+def _new_session_state(state: InteractiveState) -> None:
+    config = load_config()
+    state.action_mode = "recommend"
+    state.routing_mode = _normalize_routing(config.routing_mode)
+    state.forced_model = None
+    state.max_cost_score = None
+    state.preplan_cache = True
+    state.yes = False
+    state.run_tests = True
+    console.print("New interactive state started.")
 
 
 def _set_budget(state: InteractiveState, value: str) -> None:
