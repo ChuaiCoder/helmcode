@@ -29,3 +29,19 @@ def test_repo_map_incremental_rebuild_reuses_existing_index_cache(tmp_path: Path
     changed = repo_map.get_changed_files()
 
     assert changed == ["file2.txt"]
+
+
+def test_file_index_honors_gitignore_directory_patterns(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text(".npm-cache/\n*.log\n", encoding="utf-8")
+    cache_dir = tmp_path / ".npm-cache"
+    cache_dir.mkdir()
+    (cache_dir / "debug.txt").write_text("cache", encoding="utf-8")
+    (tmp_path / "app.log").write_text("log", encoding="utf-8")
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+
+    files = FileIndex(tmp_path, workspace.ignored_patterns).list_files(use_cache=False)
+
+    assert ".npm-cache/debug.txt" not in files
+    assert "app.log" not in files
+    assert "app.py" in files

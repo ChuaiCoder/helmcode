@@ -17,6 +17,7 @@ DEFAULT_EXCLUDES = {
     "node_modules",
     "__pycache__",
     ".pytest_cache",
+    ".npm-cache",
     "dist",
     "build",
     SESSION_DIR_NAME,
@@ -48,6 +49,14 @@ class FileIndex:
 
         self._files_cache = sorted(files)
         return self._files_cache[:limit]
+
+    @property
+    def cache_path(self) -> Path:
+        return self._cache_path
+
+    @property
+    def cached_file_count(self) -> int:
+        return len(self._cache)
 
     def get_changed_files(self) -> list[str]:
         """Get files that have changed since last cache update."""
@@ -131,4 +140,16 @@ class FileIndex:
     def _ignored(self, relative: str, path: Path) -> bool:
         if any(part in DEFAULT_EXCLUDES for part in path.parts):
             return True
-        return any(fnmatch.fnmatch(relative, pattern) for pattern in self.ignored_patterns)
+        return any(_matches_ignore_pattern(relative, pattern) for pattern in self.ignored_patterns)
+
+
+def _matches_ignore_pattern(relative: str, pattern: str) -> bool:
+    normalized = pattern.replace("\\", "/").strip()
+    if not normalized:
+        return False
+    if normalized.endswith("/"):
+        directory = normalized.rstrip("/")
+        return relative == directory or relative.startswith(directory + "/")
+    if "/" not in normalized:
+        return any(fnmatch.fnmatch(part, normalized) for part in Path(relative).parts)
+    return fnmatch.fnmatch(relative, normalized)

@@ -103,6 +103,8 @@ helmcode agents plan --json "refactor the routing layer and add tests"
 helmcode checkpoint create "before risky refactor"
 helmcode checkpoint restore <checkpoint-id> --dry-run
 helmcode restore <checkpoint-id> --yes
+helmcode index build
+helmcode index changed
 helmcode sessions
 helmcode events
 helmcode stats
@@ -136,6 +138,8 @@ commands to control the session:
 /restore <id>                 restore a checkpoint after confirmation
 /models                       show configured roles and profiles
 /quota                        show local quota estimates
+/index                        show local file index status
+/changed                      show files changed since index build
 /sessions                     show recent local sessions
 /events [session]             show recent audit events
 /replay <session>             replay one session timeline
@@ -162,6 +166,11 @@ non-ignored workspace files under `.helmcode/checkpoints`. Use
 `helmcode checkpoint restore <id> --dry-run` to preview a restore and
 `helmcode restore <id> --yes` to restore captured files. Checkpoints skip paths
 that look like secrets, such as `.env`, credentials, tokens, and private keys.
+
+`helmcode index build` refreshes the local file index stored under
+`.helmcode/file_index.json`. `helmcode index changed` reports files that changed
+since the last index build. These commands are local-only and are used by the
+context builder to keep repo scans cheap and repeatable.
 
 `helmcode agents plan` is a local Coding Plan allocation planner. It does not
 call a provider. It splits a task across built-in agents such as `scout`,

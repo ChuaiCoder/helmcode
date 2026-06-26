@@ -15,6 +15,7 @@ from helmcode.cli.commands import (
     config as config_command,
     diff,
     doctor,
+    index,
     init_project,
     models,
     plan,
@@ -105,6 +106,12 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/quota":
         models.model_status(workspace=state.workspace_path)
+        return True
+    if command == "/index":
+        index.status_index(workspace=state.workspace_path)
+        return True
+    if command == "/changed":
+        index.changed_index(workspace=state.workspace_path)
         return True
     if command == "/sessions":
         sessions.list_sessions_command(workspace=state.workspace_path)
@@ -301,6 +308,8 @@ def _print_help(compact: bool) -> None:
         ("/restore <id>", "Restore a checkpoint after confirmation."),
         ("/models", "Show configured roles and model profiles."),
         ("/quota", "Show local quota estimates."),
+        ("/index", "Show local file index status."),
+        ("/changed", "Show files changed since index build."),
         ("/sessions", "Show recent local sessions."),
         ("/events [session]", "Show recent audit events."),
         ("/replay <session>", "Replay one session timeline."),
