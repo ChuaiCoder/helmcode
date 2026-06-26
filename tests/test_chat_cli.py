@@ -222,6 +222,28 @@ def test_allocations_command_reports_history(monkeypatch, tmp_path: Path) -> Non
     ]
 
 
+def test_compact_command_compacts_session(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_compact(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.compact, "compact_cmd", record_compact)
+
+    assert chat.handle_interactive_line("/compact session-a", state) is True
+
+    assert calls == [
+        {
+            "session_id": "session-a",
+            "workspace": tmp_path,
+            "list_compactions": False,
+            "show_text": False,
+            "output_json": False,
+        }
+    ]
+
+
 def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

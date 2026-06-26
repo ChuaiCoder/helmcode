@@ -12,6 +12,7 @@ from helmcode.cli.commands import (
     apply,
     checkpoints,
     chat,
+    compact,
     config,
     context,
     cost,
@@ -65,6 +66,7 @@ app.command("run")(run.run_task)
 app.command("plan")(plan.plan_task)
 app.command("chat")(chat.chat_cmd)
 app.command("code")(chat.chat_cmd)
+app.command("compact")(compact.compact_cmd)
 app.command("context")(context.context_cmd)
 app.command("cost")(cost.cost_cmd)
 app.command("savings")(savings.savings_cmd)

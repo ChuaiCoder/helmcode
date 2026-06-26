@@ -7,6 +7,7 @@ EVENT_TYPES = {
     "tool_call",
     "tool_result",
     "plan_created",
+    "session_compacted",
     "patch_created",
     "patch_applied",
     "command_requested",

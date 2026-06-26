@@ -152,6 +152,8 @@ helmcode sessions
 helmcode events
 helmcode stats
 helmcode replay <session-id>
+helmcode compact <session-id>
+helmcode compact --list
 helmcode sessions diff <left-session-id> <right-session-id>
 helmcode prune-sessions --keep 20
 helmcode diff
@@ -199,6 +201,7 @@ commands to control the session:
 /events [session]             show recent audit events
 /replay <session>             replay one session timeline
 /session-diff <a> <b>         compare two sessions
+/compact [session]            compact session history into local markdown
 /prune-sessions               delete old session records after confirmation
 /stats                        show aggregate session stats
 /status                       show workspace and routing status
@@ -252,6 +255,10 @@ budget blocks, and cost distribution by agent and model.
 agents, selected models, selected cost, savings score, and blocked/budget state.
 `helmcode plans` is a Reasonix-style alias for the same local allocation
 history view.
+`helmcode compact <session>` turns a long session event timeline into a
+deterministic markdown archive under `.helmcode/compactions`, preserving the
+task, Coding Plan route, model calls, patch files, test outcomes, and timeline
+without another provider call.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to

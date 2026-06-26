@@ -14,6 +14,7 @@ from helmcode.cli.commands import (
     apply,
     checkpoints,
     config as config_command,
+    compact,
     context,
     cost,
     diff,
@@ -165,6 +166,15 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/prune-sessions":
         sessions.prune_command(workspace=state.workspace_path)
+        return True
+    if command == "/compact":
+        compact.compact_cmd(
+            session_id=rest or None,
+            workspace=state.workspace_path,
+            list_compactions=False,
+            show_text=False,
+            output_json=False,
+        )
         return True
     if command == "/stats":
         sessions.stats_command(workspace=state.workspace_path)
@@ -424,6 +434,7 @@ def _print_help(compact: bool) -> None:
         ("/events [session]", "Show recent audit events."),
         ("/replay <session>", "Replay one session timeline."),
         ("/session-diff <a> <b>", "Compare two sessions."),
+        ("/compact [session]", "Compact session history into local markdown."),
         ("/prune-sessions", "Delete old session records after confirmation."),
         ("/stats", "Show aggregate session stats."),
         ("/status", "Show workspace, mode, routing, and quota."),
