@@ -97,6 +97,7 @@ helmcode code --mode run --routing quota
 helmcode init
 helmcode setup
 helmcode run "help me add tests for the auth module"
+helmcode run --max-cost-score 8 "help me add tests for the auth module"
 helmcode plan "explain this repository architecture"
 helmcode models recommend "help me add tests for the auth module"
 helmcode models status
@@ -141,6 +142,7 @@ commands to control the session:
 /mode recommend|plan|run      set what bare prompt text does
 /routing fixed|quota|recommend set model routing for the session
 /model <provider:model|clear> force or clear a model override
+/budget <score|clear>         set a Coding Plan max cost score for plan/run
 /agents <task>                show quota-saving multi-agent assignment
 /checkpoint [label]           create a local workspace checkpoint
 /checkpoints                  list local checkpoints
@@ -171,6 +173,12 @@ commands to control the session:
 `helmcode run` performs the main Agent workflow: record a Coding Plan allocation, run any allocated cheap pre-plan agents, generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Required allocation agents are checked before provider calls; if a required coding or planning agent has no quota capacity, the run is blocked before spending another model request. Use `--yes` for non-interactive approval of the plan and patch confirmations.
 
 `helmcode plan` also records the Coding Plan allocation for observability, but it does not block on exhausted downstream coding quota. That keeps planning useful when you want to inspect the intended path before deciding whether to free quota, switch models, or wait for reset.
+
+Use `--max-cost-score <n>` on `helmcode plan` or `helmcode run` to enforce a
+per-task Coding Plan budget. The runtime records the allocation and then blocks
+before any provider call if the selected multi-agent path exceeds the budget.
+In interactive sessions, `/budget <n>` applies the same cap to `/agents`,
+`/plan`, `/run`, and bare prompts.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to
@@ -240,7 +248,8 @@ without writing to the quota ledger. If two agents would use the same model and
 only one local request remains, the later optional agent is skipped or the later
 required agent blocks the plan before any provider call is made. Assignment JSON
 and the table output include projected remaining quota after each allocated
-call.
+call. Pass `--max-cost-score` to `helmcode agents plan` to preview whether a
+task would exceed a budget without calling a provider.
 
 When allocation includes `scout` or `summarizer`, `helmcode plan` and
 `helmcode run` execute those pre-plan agents with the selected fast model before
@@ -290,9 +299,10 @@ Every `plan` and `run` workflow records local session events under
 `.helmcode/sessions.sqlite3` and `.helmcode/audit_log.jsonl`, including
 `task_allocated` events before model calls, `preplan_agent_completed` events for
 cheap scout/summarizer work, `model_blocked` events when quota prevents a real
-provider call, and `model_selected` or `model_called` events as execution
-proceeds. Use these commands to inspect what the agent allocated, selected,
-called, generated, applied, and verified:
+provider call, `task_budget_blocked` events when a cost-score cap prevents a
+run, and `model_selected` or `model_called` events as execution proceeds. Use
+these commands to inspect what the agent allocated, selected, called,
+generated, applied, and verified:
 
 ```bash
 helmcode sessions

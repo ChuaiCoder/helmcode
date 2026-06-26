@@ -659,6 +659,49 @@ def test_runner_plan_mode_still_blocks_exhausted_planning_call(tmp_path: Path) -
     assert blocked[0]["model_id"] == "fake:planning"
 
 
+def test_runner_blocks_before_provider_call_when_cost_budget_is_exceeded(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+        }
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, QuotaLedger(tmp_path / "quota.jsonl")),
+        session_store=store,
+    )
+    provider = SequenceProvider("not called")
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+        block_on_allocation=False,
+        max_cost_score=1,
+    )
+
+    try:
+        runner.plan("add a greeting helper")
+    except ModelError as exc:
+        assert "Coding Plan budget exceeded" in str(exc)
+    else:
+        raise AssertionError("budget cap should block before provider calls")
+    assert provider.calls == []
+    allocated = [payload for _sid, event_type, payload in store.events if event_type == "task_allocated"]
+    assert allocated[0]["max_cost_score"] == 1
+    assert allocated[0]["budget_exceeded"] is True
+    budget_blocked = [payload for _sid, event_type, payload in store.events if event_type == "task_budget_blocked"]
+    assert budget_blocked[0]["max_cost_score"] == 1
+
+
 def test_generate_patch_reviews_patch_when_review_model_is_configured(tmp_path: Path) -> None:
     (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
     patch = """--- a/hello.txt

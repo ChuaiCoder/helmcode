@@ -22,6 +22,12 @@ def plan_agents(
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed or quota."),
     model: str | None = typer.Option(None, "--model", help="Force all agents to this provider:model id."),
     include_repair: bool = typer.Option(False, "--include-repair", help="Include a repair agent in the allocation."),
+    max_cost_score: int | None = typer.Option(
+        None,
+        "--max-cost-score",
+        min=1,
+        help="Show whether selected cost score exceeds this budget.",
+    ),
     output_json: bool = typer.Option(False, "--json", help="Print machine-readable allocation JSON."),
 ) -> None:
     """Show multi-agent assignment for a task without calling a provider."""
@@ -31,6 +37,7 @@ def plan_agents(
         routing=routing,
         model=model,
         include_repair=include_repair,
+        max_cost_score=max_cost_score,
     )
     if output_json:
         print_allocation_json(allocation)
@@ -72,6 +79,7 @@ def build_allocation(
     routing: str | None = None,
     model: str | None = None,
     include_repair: bool = False,
+    max_cost_score: int | None = None,
 ) -> TaskAllocation:
     config = load_config()
     routing_mode = routing or config.routing_mode
@@ -85,7 +93,12 @@ def build_allocation(
         routing_mode=routing_mode,
     )
     allocator = CodingPlanTaskAllocator(config, selector)
-    return allocator.allocate(task, override_model_id=model, include_repair=include_repair)
+    return allocator.allocate(
+        task,
+        override_model_id=model,
+        include_repair=include_repair,
+        max_cost_score=max_cost_score,
+    )
 
 
 def print_allocation(allocation: TaskAllocation) -> None:
@@ -98,6 +111,9 @@ def print_allocation(allocation: TaskAllocation) -> None:
     summary.add_row("Estimated calls", str(allocation.estimated_calls))
     summary.add_row("Baseline cost score", str(allocation.baseline_cost_score))
     summary.add_row("Selected cost score", str(allocation.selected_cost_score))
+    if allocation.max_cost_score is not None:
+        summary.add_row("Max cost score", str(allocation.max_cost_score))
+        summary.add_row("Budget exceeded", "yes" if allocation.budget_exceeded else "no")
     summary.add_row("Estimated savings score", str(allocation.estimated_savings_score))
     console.print(summary)
 

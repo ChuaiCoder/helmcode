@@ -253,11 +253,13 @@ def test_allocation_to_dict_exposes_runtime_contract(tmp_path: Path) -> None:
         )
     ]
 
-    allocation = _allocator(config, tmp_path).allocate("add a small helper")
+    allocation = _allocator(config, tmp_path).allocate("add a small helper", max_cost_score=3)
     payload = allocation.to_dict()
 
     assert payload["task"] == "add a small helper"
     assert payload["blocked"] is False
+    assert payload["max_cost_score"] == 3
+    assert payload["budget_exceeded"] is True
     assert payload["estimated_savings_score"] == allocation.estimated_savings_score
     first_assignment = payload["assignments"][0]
     assert first_assignment["agent_id"] == "planner"

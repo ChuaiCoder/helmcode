@@ -24,6 +24,12 @@ def plan_task(
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed or quota."),
     model: str | None = typer.Option(None, "--model", help="Force planning to this provider:model id."),
+    max_cost_score: int | None = typer.Option(
+        None,
+        "--max-cost-score",
+        min=1,
+        help="Block before provider calls if Coding Plan selected cost score exceeds this value.",
+    ),
 ) -> None:
     """Generate a plan without modifying files."""
     config = load_config()
@@ -67,6 +73,7 @@ def plan_task(
         runtime=runtime,
         block_on_allocation=False,
         allocation_include_repair=False,
+        max_cost_score=max_cost_score,
     )
     result = runner.plan(task)
     console.print(Panel(result.plan, title="Plan"))

@@ -36,6 +36,8 @@ def test_agents_plan_json_outputs_machine_readable_contract(monkeypatch, tmp_pat
             "quota",
             "--model",
             "main:coder",
+            "--max-cost-score",
+            "3",
             "--json",
         ],
     )
@@ -53,6 +55,7 @@ def test_agents_plan_json_outputs_machine_readable_contract(monkeypatch, tmp_pat
             "routing": "quota",
             "model": "main:coder",
             "include_repair": False,
+            "max_cost_score": 3,
         }
     ]
 

@@ -40,6 +40,7 @@ class InteractiveState:
     action_mode: ActionMode = "recommend"
     routing_mode: str = "quota"
     forced_model: str | None = None
+    max_cost_score: int | None = None
     yes: bool = False
     run_tests: bool = True
 
@@ -49,6 +50,12 @@ def chat_cmd(
     mode: str = typer.Option("recommend", "--mode", help="Default bare prompt action: recommend, plan, or run."),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed, quota, or recommend."),
     model: str | None = typer.Option(None, "--model", help="Force all model calls to this provider:model id."),
+    max_cost_score: int | None = typer.Option(
+        None,
+        "--max-cost-score",
+        min=1,
+        help="Block plan/run before provider calls if Coding Plan selected cost score exceeds this value.",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Approve safe confirmations where allowed."),
     no_tests: bool = typer.Option(False, "--no-tests", help="Skip tests for /run."),
 ) -> None:
@@ -59,6 +66,7 @@ def chat_cmd(
         action_mode=_normalize_mode(mode),
         routing_mode=_normalize_routing(routing or config.routing_mode),
         forced_model=model,
+        max_cost_score=max_cost_score,
         yes=yes,
         run_tests=not no_tests,
     )
@@ -109,6 +117,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/quota":
         models.model_status(workspace=state.workspace_path)
+        return True
+    if command == "/budget":
+        _set_budget(state, rest)
         return True
     if command == "/index":
         index.status_index(workspace=state.workspace_path)
@@ -251,6 +262,7 @@ def _recommend(task: str, state: InteractiveState) -> None:
         no_tests=not state.run_tests,
         routing="recommend",
         model=state.forced_model,
+        max_cost_score=state.max_cost_score,
     )
 
 
@@ -261,6 +273,7 @@ def _agents(task: str, state: InteractiveState) -> None:
         routing="quota" if state.routing_mode == "recommend" else state.routing_mode,
         model=state.forced_model,
         include_repair=False,
+        max_cost_score=state.max_cost_score,
     )
     agents.print_allocation(allocation)
 
@@ -272,6 +285,7 @@ def _plan(task: str, state: InteractiveState) -> None:
         workspace=state.workspace_path,
         routing=routing,
         model=state.forced_model,
+        max_cost_score=state.max_cost_score,
     )
 
 
@@ -283,6 +297,7 @@ def _run(task: str, state: InteractiveState) -> None:
         no_tests=not state.run_tests,
         routing=state.routing_mode,
         model=state.forced_model,
+        max_cost_score=state.max_cost_score,
     )
 
 
@@ -300,6 +315,7 @@ def _print_banner(state: InteractiveState) -> None:
     table.add_row("Mode", state.action_mode)
     table.add_row("Routing", state.routing_mode)
     table.add_row("Forced model", state.forced_model or "none")
+    table.add_row("Budget", str(state.max_cost_score) if state.max_cost_score is not None else "none")
     console.print(table)
 
 
@@ -328,6 +344,7 @@ def _print_help(compact: bool) -> None:
         ("/mode recommend|plan|run", "Set what bare prompt text does."),
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
+        ("/budget <score|clear>", "Set a Coding Plan max cost score for plan/run."),
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),
@@ -404,6 +421,23 @@ def _set_model(state: InteractiveState, value: str) -> None:
     else:
         state.forced_model = value
     console.print(f"Forced model: {state.forced_model or 'none'}")
+
+
+def _set_budget(state: InteractiveState, value: str) -> None:
+    if not value:
+        console.print(f"Budget: {state.max_cost_score if state.max_cost_score is not None else 'none'}")
+        return
+    if value in {"clear", "none", "off"}:
+        state.max_cost_score = None
+    else:
+        try:
+            budget = int(value)
+        except ValueError as exc:
+            raise ValueError("budget must be a positive integer or clear") from exc
+        if budget <= 0:
+            raise ValueError("budget must be a positive integer or clear")
+        state.max_cost_score = budget
+    console.print(f"Budget: {state.max_cost_score if state.max_cost_score is not None else 'none'}")
 
 
 def _parse_on_off(value: str, current: bool) -> bool:

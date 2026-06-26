@@ -97,6 +97,7 @@ class TaskAllocation:
     estimated_calls: int
     baseline_cost_score: int
     selected_cost_score: int
+    max_cost_score: int | None = None
 
     @property
     def estimated_savings_score(self) -> int:
@@ -105,6 +106,10 @@ class TaskAllocation:
     @property
     def blocked(self) -> bool:
         return any(warning.startswith("blocked:") for warning in self.warnings)
+
+    @property
+    def budget_exceeded(self) -> bool:
+        return self.max_cost_score is not None and self.selected_cost_score > self.max_cost_score
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -118,6 +123,8 @@ class TaskAllocation:
             "estimated_calls": self.estimated_calls,
             "baseline_cost_score": self.baseline_cost_score,
             "selected_cost_score": self.selected_cost_score,
+            "max_cost_score": self.max_cost_score,
+            "budget_exceeded": self.budget_exceeded,
             "estimated_savings_score": self.estimated_savings_score,
         }
 
@@ -197,6 +204,7 @@ class CodingPlanTaskAllocator:
         *,
         override_model_id: str | None = None,
         include_repair: bool = False,
+        max_cost_score: int | None = None,
     ) -> TaskAllocation:
         detected_task_type = classify_task(task)
         complexity = classify_complexity(task)
@@ -265,6 +273,7 @@ class CodingPlanTaskAllocator:
             estimated_calls=len(assignments),
             baseline_cost_score=baseline_cost,
             selected_cost_score=selected_cost,
+            max_cost_score=max_cost_score,
         )
 
     def _agent_ids_for_task(

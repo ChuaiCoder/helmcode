@@ -73,6 +73,7 @@ class RunOrchestrator:
         max_repair_attempts: int = 3,
         block_on_allocation: bool = True,
         allocation_include_repair: bool = False,
+        max_cost_score: int | None = None,
     ) -> None:
         self.workspace = workspace
         self.provider = provider
@@ -89,6 +90,7 @@ class RunOrchestrator:
         self.max_repair_attempts = max_repair_attempts
         self.block_on_allocation = block_on_allocation
         self.allocation_include_repair = allocation_include_repair
+        self.max_cost_score = max_cost_score
 
     def run(self, task: str, confirmed: bool, run_tests: bool = True) -> RunResult:
         prepared = self.prepare(task)
@@ -388,6 +390,7 @@ class RunOrchestrator:
                 task=task,
                 include_repair=self.allocation_include_repair,
                 block_on_required=self.block_on_allocation,
+                max_cost_score=self.max_cost_score,
             )
         return None
 

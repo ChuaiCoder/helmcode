@@ -35,6 +35,7 @@ class AgentRuntime:
         task: str,
         include_repair: bool = False,
         block_on_required: bool = True,
+        max_cost_score: int | None = None,
     ) -> TaskAllocation | None:
         if self.selector is None:
             return None
@@ -42,10 +43,23 @@ class AgentRuntime:
             task,
             override_model_id=self.override_model_id,
             include_repair=include_repair,
+            max_cost_score=max_cost_score,
         )
         payload = allocation.to_dict()
         session.record("task_allocated", payload)
         self._record(session.session_id, "task_allocated", payload)
+        if allocation.budget_exceeded:
+            blocked_payload = {
+                "selected_cost_score": allocation.selected_cost_score,
+                "max_cost_score": allocation.max_cost_score,
+                "estimated_savings_score": allocation.estimated_savings_score,
+            }
+            session.record("task_budget_blocked", blocked_payload)
+            self._record(session.session_id, "task_budget_blocked", blocked_payload)
+            raise ModelError(
+                "Coding Plan budget exceeded: "
+                f"selected cost score {allocation.selected_cost_score} > max {allocation.max_cost_score}"
+            )
         if block_on_required and allocation.blocked:
             raise ModelError("Coding Plan allocation blocked: " + "; ".join(allocation.warnings))
         return allocation

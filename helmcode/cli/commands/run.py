@@ -38,6 +38,12 @@ def run_task(
     no_tests: bool = typer.Option(False, "--no-tests", help="Skip automatic test command after apply."),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed, quota, or recommend."),
     model: str | None = typer.Option(None, "--model", help="Force all model calls to this provider:model id."),
+    max_cost_score: int | None = typer.Option(
+        None,
+        "--max-cost-score",
+        min=1,
+        help="Block before provider calls if Coding Plan selected cost score exceeds this value.",
+    ),
 ) -> None:
     """Run one task through plan, patch generation, diff confirmation, apply, and tests."""
     try:
@@ -89,6 +95,7 @@ def run_task(
             runtime=runtime,
             block_on_allocation=True,
             allocation_include_repair=not no_tests,
+            max_cost_score=max_cost_score,
         )
         with Progress(
             SpinnerColumn(),
