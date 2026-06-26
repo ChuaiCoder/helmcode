@@ -2,6 +2,7 @@ from pathlib import Path
 
 from helmcode.context.context_builder import ContextBuilder
 from helmcode.context.workspace import Workspace
+from helmcode.memory.skill_store import SkillStore
 
 
 def test_context_builder_includes_relevant_file_content(tmp_path: Path) -> None:
@@ -37,3 +38,19 @@ def test_context_builder_skips_sensitive_relevant_files(tmp_path: Path) -> None:
 
     assert "TOKEN=secret" not in built.text
     assert ".env" not in built.files_considered
+
+
+def test_context_builder_injects_matching_project_skill(tmp_path: Path) -> None:
+    SkillStore(tmp_path).add(
+        skill_id="api-review",
+        description="API review guidance",
+        triggers=["api"],
+        instructions="Check backward compatibility before editing API responses.",
+    )
+    workspace = Workspace.discover(tmp_path)
+
+    built = ContextBuilder(workspace).build_for_task("change api response shape")
+
+    assert "Matched skills:" in built.text
+    assert "### api-review" in built.text
+    assert "Check backward compatibility" in built.text

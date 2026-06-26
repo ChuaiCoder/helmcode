@@ -7,6 +7,7 @@ from pathlib import Path
 from helmcode.context.repo_map import RepoMap
 from helmcode.context.token_budget import TokenBudget
 from helmcode.context.workspace import Workspace
+from helmcode.memory.skill_store import SkillStore, render_skills_for_context
 from helmcode.safety.secret_scanner import SecretScanner
 
 
@@ -33,11 +34,14 @@ class ContextBuilder:
     def build_for_task(self, task: str) -> BuiltContext:
         repo_map = RepoMap.build(self.workspace)
         relevant_files = self._select_relevant_files(task, repo_map.files)
+        skill_context = render_skills_for_context(SkillStore(self.workspace.root_path).matching(task))
         sections = [
             f"User task:\n{task}",
             f"Workspace:\n{self.workspace.project_files_summary}",
             f"Repository map:\n{repo_map.summary()}",
         ]
+        if skill_context:
+            sections.append("Matched skills:\n" + skill_context)
         excerpts = self._build_file_excerpts(relevant_files)
         if excerpts:
             sections.append("Relevant file excerpts:\n" + "\n\n".join(excerpts))

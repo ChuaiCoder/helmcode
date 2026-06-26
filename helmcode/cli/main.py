@@ -21,6 +21,7 @@ from helmcode.cli.commands import (
     run,
     sessions,
     setup,
+    skills,
 )
 
 console = Console()
@@ -35,6 +36,7 @@ app.add_typer(agents.app, name="agents")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(checkpoints.app, name="checkpoint")
 app.add_typer(index.app, name="index")
+app.add_typer(skills.app, name="skills")
 
 
 @app.callback(invoke_without_command=True)

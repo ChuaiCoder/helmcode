@@ -21,6 +21,7 @@ from helmcode.cli.commands import (
     plan,
     run,
     sessions,
+    skills,
 )
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
@@ -144,6 +145,13 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             _agents(rest, state)
         else:
             agents.list_agents()
+        return True
+    if command == "/skills":
+        skills.list_skills(workspace=state.workspace_path)
+        return True
+    if command == "/skill-match":
+        _require_task(rest, "/skill-match")
+        skills.match_skills(task=rest, workspace=state.workspace_path)
         return True
     if command == "/checkpoint":
         checkpoints.create_checkpoint(label=rest, workspace=state.workspace_path)
@@ -303,6 +311,8 @@ def _print_help(compact: bool) -> None:
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
+        ("/skills", "List built-in and project skills."),
+        ("/skill-match <task>", "Show skills matched for a task."),
         ("/checkpoint [label]", "Create a local workspace checkpoint."),
         ("/checkpoints", "List local checkpoints."),
         ("/restore <id>", "Restore a checkpoint after confirmation."),

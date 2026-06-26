@@ -105,6 +105,8 @@ helmcode checkpoint restore <checkpoint-id> --dry-run
 helmcode restore <checkpoint-id> --yes
 helmcode index build
 helmcode index changed
+helmcode skills list
+helmcode skills match "optimize codingplan quota routing"
 helmcode sessions
 helmcode events
 helmcode stats
@@ -140,6 +142,8 @@ commands to control the session:
 /quota                        show local quota estimates
 /index                        show local file index status
 /changed                      show files changed since index build
+/skills                       list built-in and project skills
+/skill-match <task>           show skills matched for a task
 /sessions                     show recent local sessions
 /events [session]             show recent audit events
 /replay <session>             replay one session timeline
@@ -171,6 +175,19 @@ that look like secrets, such as `.env`, credentials, tokens, and private keys.
 `.helmcode/file_index.json`. `helmcode index changed` reports files that changed
 since the last index build. These commands are local-only and are used by the
 context builder to keep repo scans cheap and repeatable.
+
+`helmcode skills` manages built-in and project skills. Project skills live in
+`.agents/skills/*.json`. When a task matches a skill trigger, the skill
+instructions are injected into the task context before planning or patch
+generation:
+
+```bash
+helmcode skills add api-review \
+  --trigger api \
+  --description "API review guidance" \
+  --instructions "Check compatibility, callers, tests, and response contracts."
+helmcode skills match "change api response"
+```
 
 `helmcode agents plan` is a local Coding Plan allocation planner. It does not
 call a provider. It splits a task across built-in agents such as `scout`,
