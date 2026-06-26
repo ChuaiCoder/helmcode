@@ -48,3 +48,46 @@ def test_context_command_reports_reference_warnings(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["warnings"] == ["Skipped @missing.py: file not found"]
+
+
+def test_context_command_outputs_directory_references(tmp_path: Path) -> None:
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "a.py").write_text("a" * 80, encoding="utf-8")
+    (source_dir / "b.py").write_text("b" * 40, encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["context", "explain @src", "--workspace", str(tmp_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["explicit_references"] == ["src/a.py", "src/b.py"]
+    assert payload["files_considered"] == ["src/a.py", "src/b.py"]
+    assert payload["explicit_context_tokens"] == 30
+
+
+def test_context_command_limits_directory_references(tmp_path: Path) -> None:
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "a.py").write_text("a\n", encoding="utf-8")
+    (source_dir / "b.py").write_text("b\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "context",
+            "explain @src",
+            "--workspace",
+            str(tmp_path),
+            "--max-explicit-files",
+            "1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["explicit_references"] == ["src/a.py"]
+    assert payload["warnings"] == ["Truncated @src: only included first 1 files"]

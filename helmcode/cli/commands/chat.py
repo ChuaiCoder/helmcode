@@ -180,6 +180,7 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             show_text=False,
             output_json=False,
             max_file_chars=4_000,
+            max_explicit_files=8,
         )
         return True
     if command == "/skills":

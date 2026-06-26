@@ -218,15 +218,20 @@ context:
 
 ```bash
 helmcode context "explain quota routing in @helmcode/models/quota.py"
+helmcode context "summarize context code in @helmcode/context" --max-explicit-files 6
 helmcode plan "explain quota routing in @helmcode/models/quota.py"
 helmcode run "add tests for @helmcode/context/context_builder.py"
 ```
 
-References must stay inside the workspace and must be text-like, non-sensitive
-files. Skipped references are reported in the generated context. For token quota
-policies, Coding Plan allocation adds an explicit context token estimate to the
-affected scout, summarizer, planner, coder, and repair reservations, so
-`helmcode agents plan` previews the extra quota cost before provider calls.
+References may point to files or directories, must stay inside the workspace,
+and must be text-like, non-sensitive paths. Directory references are expanded in
+path order, skip cache/dependency folders, and are capped by
+`--max-explicit-files` in `helmcode context` and by the allocator's default cap
+for `plan` and `run`. Skipped references are reported in the generated context.
+For token quota policies, Coding Plan allocation adds an explicit context token
+estimate to the affected scout, summarizer, planner, coder, and repair
+reservations, so `helmcode agents plan` previews the extra quota cost before
+provider calls.
 `helmcode context <task>` previews the exact fitted context summary, explicit
 references, warnings, and estimated token cost without spending provider quota.
 

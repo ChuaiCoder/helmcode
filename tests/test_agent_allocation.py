@@ -295,6 +295,34 @@ def test_explicit_context_reference_increases_token_reservation(tmp_path: Path) 
     assert planner.quota_reservations[0]["context_token_estimate"] == 100
 
 
+def test_explicit_directory_reference_increases_token_reservation(tmp_path: Path) -> None:
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "a.py").write_text("a" * 200, encoding="utf-8")
+    (source_dir / "b.py").write_text("b" * 200, encoding="utf-8")
+    config = _config()
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="planning_tokens",
+            model_patterns=["main:planner"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=3_000)],
+        )
+    ]
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    allocator = CodingPlanTaskAllocator(
+        config,
+        QuotaAwareSelector(config, ledger),
+        workspace=Workspace.discover(tmp_path),
+    )
+
+    allocation = allocator.allocate("plan repository architecture using @src")
+
+    planner = next(assignment for assignment in allocation.assignments if assignment.agent_id == "planner")
+    assert planner.context_token_estimate == 100
+    assert planner.quota_reserved_amount == 2_600
+
+
 def test_allocation_reserves_request_and_token_quota_for_same_agent(tmp_path: Path) -> None:
     config = _config()
     config.quota_policies = [

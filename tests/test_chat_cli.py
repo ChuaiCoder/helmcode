@@ -138,6 +138,7 @@ def test_context_command_previews_context(monkeypatch, tmp_path: Path) -> None:
             "show_text": False,
             "output_json": False,
             "max_file_chars": 4_000,
+            "max_explicit_files": 8,
         }
     ]
 

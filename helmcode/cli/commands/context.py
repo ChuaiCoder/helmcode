@@ -20,15 +20,26 @@ def context_cmd(
     show_text: bool = typer.Option(False, "--show-text", help="Print the fitted model context text."),
     output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
     max_file_chars: int = typer.Option(4_000, "--max-file-chars", min=1, help="Per-file excerpt character cap."),
+    max_explicit_files: int = typer.Option(
+        8,
+        "--max-explicit-files",
+        min=1,
+        help="Maximum files included from explicit @ references.",
+    ),
 ) -> None:
     """Preview model context for a task without calling a provider."""
     workspace_info = Workspace.discover(workspace.resolve())
-    builder = ContextBuilder(workspace_info, max_file_chars=max_file_chars)
+    builder = ContextBuilder(
+        workspace_info,
+        max_file_chars=max_file_chars,
+        max_explicit_files=max_explicit_files,
+    )
     built = builder.build_for_task(task)
     explicit_token_estimate = estimate_explicit_reference_tokens(
         workspace_info,
         task,
         max_file_chars=max_file_chars,
+        max_explicit_files=max_explicit_files,
     )
     payload = {
         "task": task,
