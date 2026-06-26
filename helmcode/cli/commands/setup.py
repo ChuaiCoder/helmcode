@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -49,6 +50,10 @@ def setup_cmd(
     planning_daily_limit: int | None = typer.Option(None, "--planning-daily-limit", min=1),
     coding_daily_limit: int | None = typer.Option(None, "--coding-daily-limit", min=1),
     review_daily_limit: int | None = typer.Option(None, "--review-daily-limit", min=1),
+    fast_daily_token_limit: int | None = typer.Option(None, "--fast-daily-token-limit", min=1),
+    planning_daily_token_limit: int | None = typer.Option(None, "--planning-daily-token-limit", min=1),
+    coding_daily_token_limit: int | None = typer.Option(None, "--coding-daily-token-limit", min=1),
+    review_daily_token_limit: int | None = typer.Option(None, "--review-daily-token-limit", min=1),
     config_path: Path | None = typer.Option(None, "--config", help="Write this config path."),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing config."),
 ) -> None:
@@ -66,22 +71,29 @@ def setup_cmd(
     coding_model = coding_model or model
     review_model = review_model or planning_model
 
-    config = build_setup_config(
-        provider_id=provider_id,
-        base_url=base_url,
-        api_key_env=api_key_env,
-        model=model,
-        fast_model=fast_model,
-        planning_model=planning_model,
-        coding_model=coding_model,
-        review_model=review_model,
-        permission_mode=permission_mode,
-        routing_mode=routing_mode,
-        fast_daily_limit=fast_daily_limit,
-        planning_daily_limit=planning_daily_limit,
-        coding_daily_limit=coding_daily_limit,
-        review_daily_limit=review_daily_limit,
-    )
+    try:
+        config = build_setup_config(
+            provider_id=provider_id,
+            base_url=base_url,
+            api_key_env=api_key_env,
+            model=model,
+            fast_model=fast_model,
+            planning_model=planning_model,
+            coding_model=coding_model,
+            review_model=review_model,
+            permission_mode=permission_mode,
+            routing_mode=routing_mode,
+            fast_daily_limit=fast_daily_limit,
+            planning_daily_limit=planning_daily_limit,
+            coding_daily_limit=coding_daily_limit,
+            review_daily_limit=review_daily_limit,
+            fast_daily_token_limit=fast_daily_token_limit,
+            planning_daily_token_limit=planning_daily_token_limit,
+            coding_daily_token_limit=coding_daily_token_limit,
+            review_daily_token_limit=review_daily_token_limit,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     path = save_user_config(config, target)
     console.print(f"Wrote helmcode config: {path}")
     console.print(f"Set API key before running model commands: {api_key_env}=...")
@@ -103,6 +115,10 @@ def build_setup_config(
     planning_daily_limit: int | None = None,
     coding_daily_limit: int | None = None,
     review_daily_limit: int | None = None,
+    fast_daily_token_limit: int | None = None,
+    planning_daily_token_limit: int | None = None,
+    coding_daily_token_limit: int | None = None,
+    review_daily_token_limit: int | None = None,
 ) -> HelmcodeConfig:
     model_roles = {
         MODEL_ROLE_DEFAULT: _model_id(provider_id, model),
@@ -130,6 +146,10 @@ def build_setup_config(
             planning_daily_limit=planning_daily_limit,
             coding_daily_limit=coding_daily_limit,
             review_daily_limit=review_daily_limit,
+            fast_daily_token_limit=fast_daily_token_limit,
+            planning_daily_token_limit=planning_daily_token_limit,
+            coding_daily_token_limit=coding_daily_token_limit,
+            review_daily_token_limit=review_daily_token_limit,
         ),
     )
 
@@ -170,25 +190,119 @@ def _build_quota_policies(
     planning_daily_limit: int | None,
     coding_daily_limit: int | None,
     review_daily_limit: int | None,
+    fast_daily_token_limit: int | None,
+    planning_daily_token_limit: int | None,
+    coding_daily_token_limit: int | None,
+    review_daily_token_limit: int | None,
 ) -> list[QuotaPolicyConfig]:
     policies: list[QuotaPolicyConfig] = []
-    for role, limit in [
-        (MODEL_ROLE_FAST, fast_daily_limit),
-        (MODEL_ROLE_PLANNING, planning_daily_limit),
-        (MODEL_ROLE_CODING, coding_daily_limit),
-        (MODEL_ROLE_REVIEW, review_daily_limit),
-    ]:
-        if limit is None:
-            continue
+    specs = _quota_limit_specs(
+        model_roles=model_roles,
+        fast_daily_limit=fast_daily_limit,
+        planning_daily_limit=planning_daily_limit,
+        coding_daily_limit=coding_daily_limit,
+        review_daily_limit=review_daily_limit,
+        fast_daily_token_limit=fast_daily_token_limit,
+        planning_daily_token_limit=planning_daily_token_limit,
+        coding_daily_token_limit=coding_daily_token_limit,
+        review_daily_token_limit=review_daily_token_limit,
+    )
+    for spec in specs:
+        suffix = "" if spec.unit == "request" else "_tokens"
         policies.append(
             QuotaPolicyConfig(
-                id=f"{role}_daily",
-                model_patterns=[model_roles[role]],
-                unit="request",
-                windows=[QuotaWindowConfig(name="daily", type="calendar_day", limit=limit)],
+                id=f"{spec.role}_daily{suffix}",
+                model_patterns=[spec.model_id],
+                unit=spec.unit,
+                windows=[QuotaWindowConfig(name="daily", type="calendar_day", limit=spec.limit)],
             )
         )
     return policies
+
+
+@dataclass(frozen=True, slots=True)
+class _QuotaLimitSpec:
+    role: str
+    model_id: str
+    unit: str
+    limit: int
+
+
+def _quota_limit_specs(
+    *,
+    model_roles: dict[str, str],
+    fast_daily_limit: int | None,
+    planning_daily_limit: int | None,
+    coding_daily_limit: int | None,
+    review_daily_limit: int | None,
+    fast_daily_token_limit: int | None,
+    planning_daily_token_limit: int | None,
+    coding_daily_token_limit: int | None,
+    review_daily_token_limit: int | None,
+) -> list[_QuotaLimitSpec]:
+    raw_specs: list[_QuotaLimitSpec] = []
+    role_limits = [
+        (MODEL_ROLE_FAST, fast_daily_limit, fast_daily_token_limit),
+        (MODEL_ROLE_PLANNING, planning_daily_limit, planning_daily_token_limit),
+        (MODEL_ROLE_CODING, coding_daily_limit, coding_daily_token_limit),
+        (MODEL_ROLE_REVIEW, review_daily_limit, review_daily_token_limit),
+    ]
+    for role, request_limit, token_limit in role_limits:
+        if request_limit is not None and token_limit is not None:
+            raise ValueError(
+                f"{role} quota cannot set both --{role}-daily-limit "
+                f"and --{role}-daily-token-limit"
+            )
+        if token_limit is not None:
+            raw_specs.append(
+                _QuotaLimitSpec(
+                    role=role,
+                    model_id=model_roles[role],
+                    unit="token",
+                    limit=token_limit,
+                )
+            )
+        elif request_limit is not None:
+            raw_specs.append(
+                _QuotaLimitSpec(
+                    role=role,
+                    model_id=model_roles[role],
+                    unit="request",
+                    limit=request_limit,
+                )
+            )
+
+    specs_by_model: dict[str, list[_QuotaLimitSpec]] = {}
+    for spec in raw_specs:
+        specs_by_model.setdefault(spec.model_id, []).append(spec)
+    for model_id, specs in specs_by_model.items():
+        units = {spec.unit for spec in specs}
+        if len(units) > 1:
+            roles = ", ".join(spec.role for spec in specs)
+            raise ValueError(
+                f"quota setup cannot mix request and token limits for model {model_id} "
+                f"shared by roles {roles}; configure separate models or choose one unit"
+            )
+
+    merged_specs: list[_QuotaLimitSpec] = []
+    for model_id, specs in specs_by_model.items():
+        limits = {spec.limit for spec in specs}
+        if len(limits) > 1:
+            roles = ", ".join(spec.role for spec in specs)
+            unit = specs[0].unit
+            raise ValueError(
+                f"quota setup policies are model-level; roles {roles} share model {model_id} "
+                f"but set different {unit} daily limits"
+            )
+        merged_specs.append(
+            _QuotaLimitSpec(
+                role="_".join(spec.role for spec in specs),
+                model_id=model_id,
+                unit=specs[0].unit,
+                limit=specs[0].limit,
+            )
+        )
+    return merged_specs
 
 
 def _model_id(provider_id: str, model: str) -> str:
