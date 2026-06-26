@@ -48,6 +48,27 @@ def test_routes_command_includes_forced_model_route(tmp_path: Path) -> None:
     assert all("main:forced" in item for item in routes["forced"]["assignment_route"])
 
 
+def test_routes_command_applies_scoped_model_override(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "routes",
+            "add tests",
+            "--workspace",
+            str(tmp_path),
+            "--role-model",
+            "coder=main:pro-coder",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["model_overrides"] == {"coder": "main:pro-coder"}
+    quota_route = next(route for route in payload["routes"] if route["route"] == "quota")
+    assert "coder=main:pro-coder" in quota_route["assignment_route"]
+
+
 def test_routes_command_prints_table(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app,

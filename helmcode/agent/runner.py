@@ -160,6 +160,7 @@ class RunOrchestrator:
             task=task,
             fallback_model_id=self.planning_model_id,
             default_provider=self.provider,
+            agent_id="planner",
         )
         planning_provider = self._provider_for(selection, self.provider)
         agent = AgentLoop(
@@ -202,6 +203,7 @@ class RunOrchestrator:
             task=planned.task,
             fallback_model_id=self.coding_model_id,
             default_provider=self.coding_provider,
+            agent_id="coder",
         )
         coding_provider = self._provider_for(selection, self.coding_provider)
         agent = AgentLoop(
@@ -292,6 +294,7 @@ class RunOrchestrator:
                     task=prepared.task,
                     fallback_model_id=self.coding_model_id,
                     default_provider=self.coding_provider,
+                    agent_id="fixer",
                 )
                 repair_provider = self._provider_for(repair_selection, self.coding_provider)
                 repair_agent = AgentLoop(
@@ -398,6 +401,7 @@ class RunOrchestrator:
             task=patch,
             fallback_model_id=self.review_model_id,
             default_provider=self.review_provider,
+            agent_id="reviewer",
             prefer_different_from=coding_model_id,
         )
         review_provider = self._provider_for(selection, self.review_provider)
@@ -428,6 +432,7 @@ class RunOrchestrator:
         task: str,
         fallback_model_id: str,
         default_provider: ProviderAdapter,
+        agent_id: str | None = None,
         prefer_different_from: str | None = None,
     ) -> ModelSelection:
         if self.runtime is None:
@@ -444,6 +449,7 @@ class RunOrchestrator:
             task_type=task_type,
             task=task,
             fallback_model_id=fallback_model_id,
+            agent_id=agent_id,
             prefer_different_from=prefer_different_from,
         )
 
@@ -505,6 +511,7 @@ class RunOrchestrator:
                     task=task,
                     fallback_model_id=assignment.model_id,
                     default_provider=self.provider,
+                    agent_id=assignment.agent_id,
                 )
             except ModelError as exc:
                 self._record(

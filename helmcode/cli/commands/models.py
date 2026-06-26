@@ -6,6 +6,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.cli.commands import agents as agents_command
 from helmcode.core.config import load_config, save_user_config
 from helmcode.models.model_registry import ModelRegistry
@@ -96,6 +97,11 @@ def recommend_models(
     task: str = typer.Argument(...),
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     model: str | None = typer.Option(None, "--model", help="Force all phases to this provider:model id."),
+    role_model: list[str] | None = typer.Option(
+        None,
+        "--role-model",
+        help="Override one agent/role/task route as KEY=provider:model. Repeatable.",
+    ),
     include_repair: bool = typer.Option(False, "--include-repair", help="Include a repair agent in the allocation."),
     max_cost_score: int | None = typer.Option(
         None,
@@ -111,6 +117,7 @@ def recommend_models(
         workspace=workspace,
         routing="quota",
         model=model,
+        model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
     )

@@ -60,6 +60,7 @@ def test_run_recommend_uses_coding_plan_allocation(monkeypatch, tmp_path: Path) 
             "workspace": tmp_path,
             "routing": "recommend",
             "model": "main:coder",
+            "model_overrides": {},
             "include_repair": True,
             "max_cost_score": 7,
         }
@@ -85,6 +86,8 @@ def test_models_recommend_json_outputs_coding_plan_allocation(monkeypatch, tmp_p
             str(tmp_path),
             "--model",
             "main:coder",
+            "--role-model",
+            "coder=main:pro-coder",
             "--include-repair",
             "--max-cost-score",
             "5",
@@ -105,6 +108,7 @@ def test_models_recommend_json_outputs_coding_plan_allocation(monkeypatch, tmp_p
             "workspace": tmp_path,
             "routing": "quota",
             "model": "main:coder",
+            "model_overrides": {"coder": "main:pro-coder"},
             "include_repair": True,
             "max_cost_score": 5,
         }

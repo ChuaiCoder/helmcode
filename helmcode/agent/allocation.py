@@ -272,6 +272,7 @@ class CodingPlanTaskAllocator:
         task: str,
         *,
         override_model_id: str | None = None,
+        model_overrides: dict[str, str] | None = None,
         include_repair: bool = False,
         max_cost_score: int | None = None,
     ) -> TaskAllocation:
@@ -293,6 +294,14 @@ class CodingPlanTaskAllocator:
 
         for agent in self._ordered_agents(agent_ids, detected_task_type=detected_task_type):
             fallback_model_id = self._fallback_model(agent)
+            scoped_override_model_id = (
+                override_model_id or _model_override_for_agent(agent, model_overrides)
+            )
+            override_reason = (
+                "explicit --model override"
+                if override_model_id
+                else _model_override_reason(agent, model_overrides)
+            )
             while True:
                 try:
                     selection = self.selector.select(
@@ -300,7 +309,8 @@ class CodingPlanTaskAllocator:
                         task_type=agent.task_type,
                         task=task,
                         fallback_model_id=fallback_model_id,
-                        override_model_id=override_model_id,
+                        override_model_id=scoped_override_model_id,
+                        override_reason=override_reason,
                         prefer_different_from=coding_model if agent.id == "reviewer" else None,
                         reserved_records=_flatten_reservations(reservation_groups),
                     )
@@ -343,7 +353,10 @@ class CodingPlanTaskAllocator:
                     else:
                         warnings.append(f"skipped:{agent.id}:{message}")
                     break
-                if override_model_id is None and not self._model_can_handle(selection.model_id, agent, fallback_model_id):
+                if (
+                    scoped_override_model_id is None
+                    and not self._model_can_handle(selection.model_id, agent, fallback_model_id)
+                ):
                     message = (
                         f"{selection.model_id} is not profiled for {agent.task_type}; "
                         f"refusing unsafe fallback for {agent.id}"
@@ -790,6 +803,42 @@ def _dedupe(values: list[str]) -> list[str]:
             result.append(value)
             seen.add(value)
     return result
+
+
+def _model_override_for_agent(
+    agent: AgentProfile,
+    model_overrides: dict[str, str] | None,
+) -> str | None:
+    if not model_overrides:
+        return None
+    overrides = {key.lower(): value for key, value in model_overrides.items()}
+    for key in _model_override_keys(agent):
+        model_id = overrides.get(key)
+        if model_id:
+            return model_id
+    return None
+
+
+def _model_override_reason(
+    agent: AgentProfile,
+    model_overrides: dict[str, str] | None,
+) -> str | None:
+    if not model_overrides:
+        return None
+    overrides = {key.lower(): value for key, value in model_overrides.items()}
+    for key in _model_override_keys(agent):
+        if overrides.get(key):
+            return f"explicit model override for {key}"
+    return None
+
+
+def _model_override_keys(agent: AgentProfile) -> tuple[str, ...]:
+    return (
+        agent.id.lower(),
+        agent.role.lower(),
+        agent.model_role.lower(),
+        agent.task_type.lower(),
+    )
 
 
 def _remaining_after_reservation(remaining: int | None, amount: int = 1) -> int | None:

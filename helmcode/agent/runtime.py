@@ -22,12 +22,14 @@ class AgentRuntime:
         provider_resolver: Callable[[str], ProviderAdapter] | None = None,
         session_store: SessionStore | None = None,
         override_model_id: str | None = None,
+        model_overrides: dict[str, str] | None = None,
     ) -> None:
         self.workspace = workspace
         self.selector = selector
         self.provider_resolver = provider_resolver
         self.session_store = session_store
         self.override_model_id = override_model_id
+        self.model_overrides = {key.lower(): value for key, value in (model_overrides or {}).items()}
 
     def allocate_task(
         self,
@@ -49,6 +51,7 @@ class AgentRuntime:
         ).allocate(
             task,
             override_model_id=self.override_model_id,
+            model_overrides=self.model_overrides,
             include_repair=include_repair,
             max_cost_score=max_cost_score,
         )
@@ -105,14 +108,24 @@ class AgentRuntime:
         task_type: str,
         task: str,
         fallback_model_id: str,
+        agent_id: str | None = None,
         prefer_different_from: str | None = None,
     ) -> ModelSelection:
+        scoped_override_model_id, override_reason = self._model_override_for_call(
+            agent_id=agent_id,
+            role=role,
+            task_type=task_type,
+        )
+        selected_override_model_id = self.override_model_id or scoped_override_model_id
+        selected_override_reason = (
+            "explicit --model override" if self.override_model_id else override_reason
+        )
         if self.selector is None:
             selection = ModelSelection(
-                model_id=self.override_model_id or fallback_model_id,
+                model_id=selected_override_model_id or fallback_model_id,
                 role=role,
                 task_type=task_type,
-                reason=f"fixed role mapping for {role}",
+                reason=selected_override_reason or f"fixed role mapping for {role}",
                 routing_mode="fixed",
             )
         else:
@@ -122,14 +135,15 @@ class AgentRuntime:
                     task_type=task_type,
                     task=task,
                     fallback_model_id=fallback_model_id,
-                    override_model_id=self.override_model_id,
+                    override_model_id=selected_override_model_id,
+                    override_reason=selected_override_reason,
                     prefer_different_from=prefer_different_from,
                 )
             except ModelError as exc:
                 payload = {
                     "role": role,
                     "task_type": task_type,
-                    "model_id": self.override_model_id or fallback_model_id,
+                    "model_id": selected_override_model_id or fallback_model_id,
                     "routing_mode": self.selector.routing_mode,
                     "reason": str(exc),
                     "blocked_reason": str(exc),
@@ -204,6 +218,21 @@ class AgentRuntime:
             f"No quota capacity for {selection.role}/{selection.task_type} on "
             f"{selection.model_id} under {policy_text}; resets at {reset_text}"
         )
+
+    def _model_override_for_call(
+        self,
+        *,
+        agent_id: str | None,
+        role: str,
+        task_type: str,
+    ) -> tuple[str | None, str | None]:
+        for key in [agent_id, role, task_type]:
+            if not key:
+                continue
+            model_id = self.model_overrides.get(key.lower())
+            if model_id:
+                return model_id, f"explicit model override for {key.lower()}"
+        return None, None
 
 
 def _quota_amounts(selection: ModelSelection, usage: dict[str, int]) -> dict[str, int]:

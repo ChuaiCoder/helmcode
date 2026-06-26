@@ -9,6 +9,7 @@ from rich.table import Table
 
 from helmcode.agent.allocation import TaskAllocation
 from helmcode.cli.commands import agents as agents_command
+from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.context_builder import ContextBuilder, estimate_explicit_reference_tokens
 from helmcode.context.workspace import Workspace
 
@@ -20,6 +21,11 @@ def cost_cmd(
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w", help="Workspace root."),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed, quota, or recommend."),
     model: str | None = typer.Option(None, "--model", help="Force all agents to this provider:model id."),
+    role_model: list[str] | None = typer.Option(
+        None,
+        "--role-model",
+        help="Override one agent/role/task route as KEY=provider:model. Repeatable.",
+    ),
     include_repair: bool = typer.Option(False, "--include-repair", help="Include a repair agent in the allocation."),
     max_cost_score: int | None = typer.Option(
         None,
@@ -48,6 +54,7 @@ def cost_cmd(
         workspace=workspace_info.root_path,
         routing=routing,
         model=model,
+        model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
     )

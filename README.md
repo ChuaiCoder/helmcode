@@ -121,6 +121,7 @@ helmcode init
 helmcode setup
 helmcode run "help me add tests for the auth module"
 helmcode run --max-cost-score 8 "help me add tests for the auth module"
+helmcode run --role-model coder=main_pool:your-pro-coding-model "implement a risky patch"
 helmcode run --session-budget-score 20 --budget-key chat "help me add tests for the auth module"
 helmcode run --no-preplan-cache "help me add tests for the auth module"
 helmcode plan "explain the routing flow in @helmcode/models/quota.py"
@@ -207,6 +208,7 @@ commands to control the session:
 /mode recommend|plan|run      set what bare prompt text does
 /routing fixed|quota|recommend set model routing for the session
 /model <provider:model|clear> force or clear a model override
+/role-model <key=model|clear> override one Coding Plan role or agent model
 /budget <score|clear>         set a Coding Plan max cost score for plan/run
 /session-budget <score|clear> set a cumulative Coding Plan budget
 /session-budget key <name>    switch the cumulative budget ledger key
@@ -458,6 +460,16 @@ legacy configs still work and `--routing fixed` continues to use the role
 mapping directly. This is the main Coding Plan quota-saving behavior: cheap
 models can handle scan, summarize, planning, or simple coding phases before the
 configured expensive coding model is spent.
+
+Use `--role-model KEY=provider:model` when you want a Reasonix-style temporary
+model override without collapsing every phase onto one expensive model. Keys can
+match an agent id (`coder`, `planner`, `reviewer`, `fixer`, `scout`), a role
+(`coding`, `planning`, `review`, `fast`), or a task type (`code_patch`, `plan`,
+`review`, `repo_scan`, `summarize`, `repair`). The global `--model` option still
+wins when both are supplied, but `--role-model coder=...` lets the Coding Plan
+keep cheap scout/planner calls while spending a stronger coding model only for
+the patch phase. Interactive sessions expose the same control through
+`/role-model`.
 
 The allocation contract includes `model_cost_tier` on every assignment and a
 structured `cost_breakdown` comparing the selected multi-agent path with a

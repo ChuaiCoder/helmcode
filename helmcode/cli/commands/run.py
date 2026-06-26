@@ -11,6 +11,7 @@ from rich.syntax import Syntax
 from helmcode.agent.runtime import AgentRuntime
 from helmcode.agent.runner import RunOrchestrator
 from helmcode.cli.commands import agents as agents_command
+from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING, MODEL_ROLE_REVIEW
@@ -33,6 +34,11 @@ def run_task(
     no_tests: bool = typer.Option(False, "--no-tests", help="Skip automatic test command after apply."),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed, quota, or recommend."),
     model: str | None = typer.Option(None, "--model", help="Force all model calls to this provider:model id."),
+    role_model: list[str] | None = typer.Option(
+        None,
+        "--role-model",
+        help="Override one agent/role/task route as KEY=provider:model. Repeatable.",
+    ),
     max_cost_score: int | None = typer.Option(
         None,
         "--max-cost-score",
@@ -76,6 +82,7 @@ def run_task(
                 workspace=ws.root_path,
                 routing=routing_mode,
                 override_model_id=model,
+                model_overrides=parse_model_overrides(role_model),
                 include_repair=not no_tests,
                 max_cost_score=max_cost_score,
             )
@@ -92,6 +99,7 @@ def run_task(
             provider_resolver=registry.provider_for_model,
             session_store=session_store,
             override_model_id=model,
+            model_overrides=parse_model_overrides(role_model),
         )
         runner = RunOrchestrator(
             workspace=ws,
@@ -203,6 +211,7 @@ def _print_recommendations(
     workspace: Path,
     routing: str,
     override_model_id: str | None,
+    model_overrides: dict[str, str] | None,
     include_repair: bool,
     max_cost_score: int | None,
 ) -> None:
@@ -211,6 +220,7 @@ def _print_recommendations(
         workspace=workspace,
         routing=routing,
         model=override_model_id,
+        model_overrides=model_overrides,
         include_repair=include_repair,
         max_cost_score=max_cost_score,
     )

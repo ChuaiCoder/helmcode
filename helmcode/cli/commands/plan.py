@@ -8,6 +8,7 @@ from rich.panel import Panel
 
 from helmcode.agent.runtime import AgentRuntime
 from helmcode.agent.runner import RunOrchestrator
+from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING, MODEL_ROLE_REVIEW
@@ -24,7 +25,12 @@ def plan_task(
     task: str = typer.Argument(...),
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed or quota."),
-    model: str | None = typer.Option(None, "--model", help="Force planning to this provider:model id."),
+    model: str | None = typer.Option(None, "--model", help="Force all model calls to this provider:model id."),
+    role_model: list[str] | None = typer.Option(
+        None,
+        "--role-model",
+        help="Override one agent/role/task route as KEY=provider:model. Repeatable.",
+    ),
     max_cost_score: int | None = typer.Option(
         None,
         "--max-cost-score",
@@ -76,6 +82,7 @@ def plan_task(
         provider_resolver=registry.provider_for_model,
         session_store=session_store,
         override_model_id=model,
+        model_overrides=parse_model_overrides(role_model),
     )
     runner = RunOrchestrator(
         workspace=ws,

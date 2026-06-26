@@ -10,6 +10,7 @@ from rich.table import Table
 
 from helmcode.agent.allocation import TaskAllocation
 from helmcode.cli.commands import agents as agents_command
+from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.workspace import Workspace
 
 console = Console()
@@ -22,6 +23,11 @@ def routes_cmd(
         None,
         "--model",
         help="Also compare a forced provider:model route.",
+    ),
+    role_model: list[str] | None = typer.Option(
+        None,
+        "--role-model",
+        help="Override one agent/role/task route as KEY=provider:model. Repeatable.",
     ),
     include_repair: bool = typer.Option(False, "--include-repair", help="Include a repair agent."),
     max_cost_score: int | None = typer.Option(
@@ -37,6 +43,7 @@ def routes_cmd(
         task=task,
         workspace=workspace.resolve(),
         model=model,
+        model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
     )
@@ -51,6 +58,7 @@ def build_routes_report(
     task: str,
     workspace: Path,
     model: str | None = None,
+    model_overrides: dict[str, str] | None = None,
     include_repair: bool = False,
     max_cost_score: int | None = None,
 ) -> dict[str, Any]:
@@ -66,6 +74,7 @@ def build_routes_report(
             label=label,
             routing=routing,
             model=route_model,
+            model_overrides=model_overrides,
             task=task,
             workspace=workspace_info.root_path,
             include_repair=include_repair,
@@ -93,6 +102,7 @@ def build_routes_report(
         "include_repair": include_repair,
         "max_cost_score": max_cost_score,
         "forced_model": model,
+        "model_overrides": model_overrides or {},
         "best_route": best["route"] if best else None,
         "routes": routes,
     }
@@ -103,6 +113,7 @@ def _route_payload(
     label: str,
     routing: str,
     model: str | None,
+    model_overrides: dict[str, str] | None,
     task: str,
     workspace: Path,
     include_repair: bool,
@@ -114,6 +125,7 @@ def _route_payload(
             workspace=workspace,
             routing=routing,
             model=model,
+            model_overrides=model_overrides,
             include_repair=include_repair,
             max_cost_score=max_cost_score,
         )
@@ -122,6 +134,7 @@ def _route_payload(
             "route": label,
             "routing": routing,
             "forced_model": model,
+            "model_overrides": model_overrides or {},
             "ok": False,
             "error": str(exc),
             "summary": None,
@@ -132,6 +145,7 @@ def _route_payload(
         "route": label,
         "routing": routing,
         "forced_model": model,
+        "model_overrides": model_overrides or {},
         "ok": True,
         "error": None,
         "summary": _summary(allocation),

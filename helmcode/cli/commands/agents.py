@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from helmcode.agent.allocation import AgentAssignment, CodingPlanTaskAllocator, TaskAllocation
+from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
@@ -22,6 +23,14 @@ def plan_agents(
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     routing: str | None = typer.Option(None, "--routing", help="Model routing: fixed or quota."),
     model: str | None = typer.Option(None, "--model", help="Force all agents to this provider:model id."),
+    role_model: list[str] | None = typer.Option(
+        None,
+        "--role-model",
+        help=(
+            "Override one agent/role/task route as KEY=provider:model. "
+            "Repeatable; keys include coder, coding, planning, review, plan, code_patch."
+        ),
+    ),
     include_repair: bool = typer.Option(False, "--include-repair", help="Include a repair agent in the allocation."),
     max_cost_score: int | None = typer.Option(
         None,
@@ -37,6 +46,7 @@ def plan_agents(
         workspace=workspace,
         routing=routing,
         model=model,
+        model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
     )
@@ -79,6 +89,7 @@ def build_allocation(
     workspace: Path,
     routing: str | None = None,
     model: str | None = None,
+    model_overrides: dict[str, str] | None = None,
     include_repair: bool = False,
     max_cost_score: int | None = None,
 ) -> TaskAllocation:
@@ -97,6 +108,7 @@ def build_allocation(
     return allocator.allocate(
         task,
         override_model_id=model,
+        model_overrides=model_overrides,
         include_repair=include_repair,
         max_cost_score=max_cost_score,
     )

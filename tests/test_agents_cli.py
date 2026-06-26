@@ -36,6 +36,8 @@ def test_agents_plan_json_outputs_machine_readable_contract(monkeypatch, tmp_pat
             "quota",
             "--model",
             "main:coder",
+            "--role-model",
+            "coder=main:pro-coder",
             "--max-cost-score",
             "3",
             "--json",
@@ -54,6 +56,7 @@ def test_agents_plan_json_outputs_machine_readable_contract(monkeypatch, tmp_pat
             "workspace": tmp_path,
             "routing": "quota",
             "model": "main:coder",
+            "model_overrides": {"coder": "main:pro-coder"},
             "include_repair": False,
             "max_cost_score": 3,
         }

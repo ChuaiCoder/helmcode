@@ -342,6 +342,7 @@ class QuotaAwareSelector:
         task: str = "",
         fallback_model_id: str | None = None,
         override_model_id: str | None = None,
+        override_reason: str | None = None,
         prefer_different_from: str | None = None,
         reserved_records: list[ModelCallRecord] | None = None,
     ) -> ModelSelection:
@@ -352,7 +353,7 @@ class QuotaAwareSelector:
                 model_id=override_model_id,
                 role=role,
                 task_type=task_type,
-                reason="explicit --model override",
+                reason=override_reason or "explicit --model override",
                 routing_mode=self.routing_mode,
                 quota_status=status,
             )

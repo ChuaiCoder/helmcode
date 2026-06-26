@@ -128,6 +128,22 @@ def test_quota_allocation_uses_cheaper_profiled_coding_model(tmp_path: Path) -> 
     assert allocation.estimated_savings_score == 5
 
 
+def test_scoped_model_override_changes_only_matching_agent(tmp_path: Path) -> None:
+    allocation = _allocator(_config(), tmp_path).allocate(
+        "add a small helper",
+        model_overrides={"coder": "main:pro-coder"},
+    )
+
+    assert [assignment.model_id for assignment in allocation.assignments] == [
+        "main:planner",
+        "main:pro-coder",
+    ]
+    coder = next(assignment for assignment in allocation.assignments if assignment.agent_id == "coder")
+    assert coder.reason == "explicit model override for coder"
+    assert allocation.selected_cost_score == 4
+    assert allocation.estimated_savings_score == 4
+
+
 def test_fixed_allocation_keeps_configured_coding_role_when_cheaper_profile_exists(
     tmp_path: Path,
 ) -> None:

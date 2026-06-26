@@ -551,6 +551,56 @@ def test_runner_records_coding_plan_allocation_event(tmp_path: Path) -> None:
     ]
 
 
+def test_runner_scoped_model_override_matches_allocation_and_real_call(tmp_path: Path) -> None:
+    (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
+    patch = """--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-hello
++hello world
+"""
+    workspace = Workspace.discover(tmp_path)
+    store = RecordingSessionStore()
+    config = HelmcodeConfig(
+        model_roles={
+            "default": "fake:planning",
+            "fast": "fake:fast",
+            "planning": "fake:planning",
+            "coding": "fake:coding",
+            "review": "fake:review",
+        }
+    )
+    runtime = AgentRuntime(
+        workspace=workspace,
+        selector=QuotaAwareSelector(config, QuotaLedger.for_workspace(workspace.root_path)),
+        session_store=store,
+        model_overrides={"coder": "fake:pro-coder"},
+    )
+    provider = SequenceProvider(patch)
+    runner = RunOrchestrator(
+        workspace=workspace,
+        provider=provider,
+        planning_model_id="fake:planning",
+        coding_model_id="fake:coding",
+        permission_mode="suggest",
+        runtime=runtime,
+        session_store=store,
+    )
+
+    runner.prepare("add a greeting helper")
+
+    assert [model for model, _messages in provider.calls] == ["fake:planning", "fake:pro-coder"]
+    allocation_events = [payload for _sid, event_type, payload in store.events if event_type == "task_allocated"]
+    coder = next(
+        assignment
+        for assignment in allocation_events[0]["assignments"]
+        if assignment["agent_id"] == "coder"
+    )
+    assert coder["model_id"] == "fake:pro-coder"
+    called_models = [payload["model_id"] for _sid, event_type, payload in store.events if event_type == "model_called"]
+    assert called_models == ["fake:planning", "fake:pro-coder"]
+
+
 def test_runner_records_hook_results_before_planning_provider_call(tmp_path: Path) -> None:
     (tmp_path / "hello.txt").write_text("hello\n", encoding="utf-8")
     HookStore(tmp_path).add(
