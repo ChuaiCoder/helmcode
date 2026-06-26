@@ -6,17 +6,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from helmcode.cli.commands import agents as agents_command
 from helmcode.core.config import load_config, save_user_config
-from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING, MODEL_ROLE_REVIEW
 from helmcode.models.model_registry import ModelRegistry
-from helmcode.models.quota import (
-    TASK_CODE_PATCH,
-    TASK_PLAN,
-    TASK_REVIEW,
-    QuotaAwareSelector,
-    QuotaLedger,
-)
-from helmcode.models.selector import ModelSelector
+from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
 
 console = Console()
 app = typer.Typer(help="Manage provider model discovery and model roles.")
@@ -107,32 +100,25 @@ def recommend_models(
     task: str = typer.Argument(...),
     workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
     model: str | None = typer.Option(None, "--model", help="Force all phases to this provider:model id."),
+    include_repair: bool = typer.Option(False, "--include-repair", help="Include a repair agent in the allocation."),
+    max_cost_score: int | None = typer.Option(
+        None,
+        "--max-cost-score",
+        min=1,
+        help="Show whether selected cost score exceeds this budget.",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print machine-readable allocation JSON."),
 ) -> None:
-    """Recommend models for a task without calling a provider."""
-    config = load_config()
-    selector = QuotaAwareSelector(config, QuotaLedger.for_workspace(workspace.resolve()))
-    role_selector = ModelSelector(config.model_roles)
-    table = Table(title="Model routing recommendation")
-    table.add_column("Phase")
-    table.add_column("Task type")
-    table.add_column("Model")
-    table.add_column("Reason")
-    phases = [
-        ("planning", TASK_PLAN, role_selector.select(MODEL_ROLE_PLANNING)),
-        ("coding", TASK_CODE_PATCH, role_selector.select(MODEL_ROLE_CODING)),
-        ("review", TASK_REVIEW, role_selector.select(MODEL_ROLE_REVIEW)),
-    ]
-    coding_model: str | None = None
-    for role, task_type, fallback_model_id in phases:
-        selection = selector.select(
-            role=role,
-            task_type=task_type,
-            task=task,
-            fallback_model_id=fallback_model_id,
-            override_model_id=model,
-            prefer_different_from=coding_model if role == "review" else None,
-        )
-        if role == "coding":
-            coding_model = selection.model_id
-        table.add_row(role, task_type, selection.model_id, selection.reason)
-    console.print(table)
+    """Recommend the Coding Plan multi-agent route without calling a provider."""
+    allocation = agents_command.build_allocation(
+        task=task,
+        workspace=workspace,
+        routing="quota",
+        model=model,
+        include_repair=include_repair,
+        max_cost_score=max_cost_score,
+    )
+    if output_json:
+        agents_command.print_allocation_json(allocation)
+        return
+    agents_command.print_allocation(allocation)

@@ -353,7 +353,7 @@ def _print_status(state: InteractiveState) -> None:
 
 def _print_help(compact: bool) -> None:
     commands = [
-        ("/recommend <task>", "Show quota-aware model routing without calling a provider."),
+        ("/recommend <task>", "Show Coding Plan allocation without calling a provider."),
         ("/plan <task>", "Generate a plan through the selected planning model."),
         ("/run <task>", "Run plan, patch, review, apply confirmation, and tests."),
         ("/mode recommend|plan|run", "Set what bare prompt text does."),

@@ -7,23 +7,17 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.syntax import Syntax
-from rich.table import Table
 
 from helmcode.agent.runtime import AgentRuntime
 from helmcode.agent.runner import RunOrchestrator
+from helmcode.cli.commands import agents as agents_command
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING, MODEL_ROLE_REVIEW
 from helmcode.core.error_handler import ErrorHandler, ErrorResponse
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.model_registry import ModelRegistry
-from helmcode.models.quota import (
-    TASK_CODE_PATCH,
-    TASK_PLAN,
-    TASK_REVIEW,
-    QuotaAwareSelector,
-    QuotaLedger,
-)
+from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
 from helmcode.models.selector import ModelSelector
 from helmcode.safety.permissions import PermissionMode
 
@@ -66,12 +60,12 @@ def run_task(
         )
         if routing_mode == "recommend":
             _print_recommendations(
-                quota_selector=quota_selector,
                 task=task,
-                planning_model_id=planning_model_id,
-                coding_model_id=coding_model_id,
-                review_model_id=review_model_id,
+                workspace=ws.root_path,
+                routing=routing_mode,
                 override_model_id=model,
+                include_repair=not no_tests,
+                max_cost_score=max_cost_score,
             )
             return
 
@@ -191,34 +185,19 @@ def _normalize_routing(value: str) -> str:
 
 def _print_recommendations(
     *,
-    quota_selector: QuotaAwareSelector,
     task: str,
-    planning_model_id: str,
-    coding_model_id: str,
-    review_model_id: str,
+    workspace: Path,
+    routing: str,
     override_model_id: str | None,
+    include_repair: bool,
+    max_cost_score: int | None,
 ) -> None:
-    table = Table(title="Model routing recommendation")
-    table.add_column("Phase")
-    table.add_column("Task type")
-    table.add_column("Model")
-    table.add_column("Reason")
-    phases = [
-        ("planning", TASK_PLAN, planning_model_id),
-        ("coding", TASK_CODE_PATCH, coding_model_id),
-        ("review", TASK_REVIEW, review_model_id),
-    ]
-    coding_choice: str | None = None
-    for role, task_type, fallback in phases:
-        selection = quota_selector.select(
-            role=role,
-            task_type=task_type,
-            task=task,
-            fallback_model_id=fallback,
-            override_model_id=override_model_id,
-            prefer_different_from=coding_choice if role == "review" else None,
-        )
-        if role == "coding":
-            coding_choice = selection.model_id
-        table.add_row(role, task_type, selection.model_id, selection.reason)
-    console.print(table)
+    allocation = agents_command.build_allocation(
+        task=task,
+        workspace=workspace,
+        routing=routing,
+        model=override_model_id,
+        include_repair=include_repair,
+        max_cost_score=max_cost_score,
+    )
+    agents_command.print_allocation(allocation)

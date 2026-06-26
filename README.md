@@ -137,7 +137,7 @@ so you can inspect model routing without spending provider quota. Use slash
 commands to control the session:
 
 ```text
-/recommend <task>             show model routing without calling a provider
+/recommend <task>             show Coding Plan allocation without calling a provider
 /plan <task>                  generate a plan
 /run <task>                   run plan, patch, review, apply confirmation, tests
 /mode recommend|plan|run      set what bare prompt text does
@@ -241,11 +241,13 @@ helmcode mcp export --format claude
 call a provider. It splits a task across built-in agents such as `scout`,
 `planner`, `coder`, `reviewer`, and `fixer`, then chooses models through the
 quota-aware selector. The same allocation contract is used by `helmcode plan`
-and `helmcode run`, so this command previews the runtime path rather than a
-separate placeholder design. Use it to check which work will use cheap models,
-which work will spend coding-model quota, and whether a required agent is
-blocked before running the task. Use `--json` when another tool needs to
-consume the allocation directly.
+and `helmcode run`, and by recommendation mode (`/recommend`,
+`helmcode run --routing recommend`, and `helmcode models recommend`), so these
+commands preview the runtime path rather than a separate placeholder design. Use
+them to check which work will use cheap models, which work will spend
+coding-model quota, and whether a required agent is blocked before running the
+task. Use `--json` on `helmcode agents plan` or `helmcode models recommend` when
+another tool needs to consume the allocation directly.
 
 The allocation contract includes `model_cost_tier` on every assignment and a
 structured `cost_breakdown` comparing the selected multi-agent path with a
