@@ -44,6 +44,15 @@ def test_sessions_events_json_can_filter_session(tmp_path: Path) -> None:
 
 def test_sessions_stats_json_reports_aggregate_counts(tmp_path: Path) -> None:
     store = SessionStore(tmp_path, enable_structured_logging=False)
+    store.record(
+        "session-a",
+        "task_allocated",
+        {
+            "baseline_cost_score": 8,
+            "selected_cost_score": 3,
+            "estimated_savings_score": 5,
+        },
+    )
     store.record("session-a", "model_called", {"model_id": "main:planner"})
     store.record("session-a", "command_result", {"ok": True})
 
@@ -55,8 +64,12 @@ def test_sessions_stats_json_reports_aggregate_counts(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["session_count"] == 1
-    assert payload["event_count"] == 2
+    assert payload["event_count"] == 3
     assert payload["model_call_count"] == 1
+    assert payload["coding_plan_allocation_count"] == 1
+    assert payload["coding_plan_baseline_cost_score"] == 8
+    assert payload["coding_plan_selected_cost_score"] == 3
+    assert payload["coding_plan_estimated_savings_score"] == 5
     assert payload["command_result_count"] == 1
 
 

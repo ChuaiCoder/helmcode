@@ -53,6 +53,11 @@ class SessionStats:
     event_count: int
     event_counts: dict[str, int]
     model_call_count: int
+    coding_plan_allocation_count: int
+    coding_plan_baseline_cost_score: int
+    coding_plan_selected_cost_score: int
+    coding_plan_estimated_savings_score: int
+    coding_plan_budget_blocked_count: int
     patch_created_count: int
     patch_applied_count: int
     command_result_count: int
@@ -65,6 +70,11 @@ class SessionStats:
             "event_count": self.event_count,
             "event_counts": self.event_counts,
             "model_call_count": self.model_call_count,
+            "coding_plan_allocation_count": self.coding_plan_allocation_count,
+            "coding_plan_baseline_cost_score": self.coding_plan_baseline_cost_score,
+            "coding_plan_selected_cost_score": self.coding_plan_selected_cost_score,
+            "coding_plan_estimated_savings_score": self.coding_plan_estimated_savings_score,
+            "coding_plan_budget_blocked_count": self.coding_plan_budget_blocked_count,
             "patch_created_count": self.patch_created_count,
             "patch_applied_count": self.patch_applied_count,
             "command_result_count": self.command_result_count,
@@ -257,15 +267,34 @@ class SessionStore:
                 """
             ).fetchall()
             bounds = conn.execute("SELECT MIN(created_at), MAX(created_at), COUNT(*) FROM events").fetchone()
+            allocation_rows = conn.execute(
+                """
+                SELECT payload
+                FROM events
+                WHERE event_type = 'task_allocated'
+                """
+            ).fetchall()
         event_counts = {event_type: int(count) for event_type, count in rows}
         first_event_at = datetime.fromisoformat(bounds[0]) if bounds and bounds[0] else None
         last_event_at = datetime.fromisoformat(bounds[1]) if bounds and bounds[1] else None
         event_count = int(bounds[2]) if bounds else 0
+        allocations = [_load_payload(row[0]) for row in allocation_rows]
         return SessionStats(
             session_count=int(session_count or 0),
             event_count=event_count,
             event_counts=event_counts,
             model_call_count=event_counts.get("model_called", 0),
+            coding_plan_allocation_count=len(allocations),
+            coding_plan_baseline_cost_score=sum(
+                _payload_int(payload, "baseline_cost_score") for payload in allocations
+            ),
+            coding_plan_selected_cost_score=sum(
+                _payload_int(payload, "selected_cost_score") for payload in allocations
+            ),
+            coding_plan_estimated_savings_score=sum(
+                _payload_int(payload, "estimated_savings_score") for payload in allocations
+            ),
+            coding_plan_budget_blocked_count=event_counts.get("task_budget_blocked", 0),
             patch_created_count=event_counts.get("patch_created", 0),
             patch_applied_count=event_counts.get("patch_applied", 0),
             command_result_count=event_counts.get("command_result", 0),
@@ -346,3 +375,19 @@ def _load_payload(payload_text: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _payload_int(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0

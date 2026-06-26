@@ -345,6 +345,11 @@ helmcode stats
 helmcode stats --json
 ```
 
+`helmcode stats` also aggregates Coding Plan allocation telemetry across stored
+sessions: allocation count, baseline cost score, selected cost score, estimated
+savings score, and budget-block count. The JSON form exposes these as stable
+fields for dashboards or quota tooling.
+
 These commands are local-only and do not call a provider.
 
 ## Example Tasks
