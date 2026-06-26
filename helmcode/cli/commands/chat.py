@@ -11,6 +11,7 @@ from rich.table import Table
 from helmcode.cli.commands import (
     agents,
     apply,
+    checkpoints,
     config as config_command,
     diff,
     doctor,
@@ -136,6 +137,16 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             _agents(rest, state)
         else:
             agents.list_agents()
+        return True
+    if command == "/checkpoint":
+        checkpoints.create_checkpoint(label=rest, workspace=state.workspace_path)
+        return True
+    if command == "/checkpoints":
+        checkpoints.list_checkpoints(workspace=state.workspace_path)
+        return True
+    if command == "/restore":
+        _require_task(rest, "/restore")
+        checkpoints.restore_checkpoint(checkpoint_id=rest, workspace=state.workspace_path, yes=state.yes)
         return True
     if command == "/doctor":
         doctor.doctor(workspace=state.workspace_path)
@@ -285,6 +296,9 @@ def _print_help(compact: bool) -> None:
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
+        ("/checkpoint [label]", "Create a local workspace checkpoint."),
+        ("/checkpoints", "List local checkpoints."),
+        ("/restore <id>", "Restore a checkpoint after confirmation."),
         ("/models", "Show configured roles and model profiles."),
         ("/quota", "Show local quota estimates."),
         ("/sessions", "Show recent local sessions."),

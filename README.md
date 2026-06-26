@@ -100,6 +100,9 @@ helmcode models recommend "help me add tests for the auth module"
 helmcode models status
 helmcode agents plan "refactor the routing layer and add tests"
 helmcode agents plan --json "refactor the routing layer and add tests"
+helmcode checkpoint create "before risky refactor"
+helmcode checkpoint restore <checkpoint-id> --dry-run
+helmcode restore <checkpoint-id> --yes
 helmcode sessions
 helmcode events
 helmcode stats
@@ -128,6 +131,9 @@ commands to control the session:
 /routing fixed|quota|recommend set model routing for the session
 /model <provider:model|clear> force or clear a model override
 /agents <task>                show quota-saving multi-agent assignment
+/checkpoint [label]           create a local workspace checkpoint
+/checkpoints                  list local checkpoints
+/restore <id>                 restore a checkpoint after confirmation
 /models                       show configured roles and profiles
 /quota                        show local quota estimates
 /sessions                     show recent local sessions
@@ -150,6 +156,12 @@ commands to control the session:
 frameworks, test commands, and local agent workflow guidance. It refuses to
 overwrite an existing file unless `--force` is passed. Use `--dry-run` to
 preview the generated content.
+
+`helmcode checkpoint create` stores a local snapshot of non-sensitive,
+non-ignored workspace files under `.helmcode/checkpoints`. Use
+`helmcode checkpoint restore <id> --dry-run` to preview a restore and
+`helmcode restore <id> --yes` to restore captured files. Checkpoints skip paths
+that look like secrets, such as `.env`, credentials, tokens, and private keys.
 
 `helmcode agents plan` is a local Coding Plan allocation planner. It does not
 call a provider. It splits a task across built-in agents such as `scout`,

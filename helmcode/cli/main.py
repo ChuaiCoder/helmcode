@@ -9,6 +9,7 @@ from helmcode import __version__
 from helmcode.cli.commands import (
     agents,
     apply,
+    checkpoints,
     chat,
     config,
     diff,
@@ -31,6 +32,7 @@ app = typer.Typer(
 app.add_typer(models.app, name="models")
 app.add_typer(agents.app, name="agents")
 app.add_typer(sessions.app, name="sessions")
+app.add_typer(checkpoints.app, name="checkpoint")
 
 
 @app.callback(invoke_without_command=True)
@@ -59,6 +61,7 @@ app.command("replay")(sessions.replay_command)
 app.command("prune-sessions")(sessions.prune_command)
 app.command("setup")(setup.setup_cmd)
 app.command("init")(init_project.init_cmd)
+app.command("restore")(checkpoints.restore_checkpoint)
 
 
 if __name__ == "__main__":
