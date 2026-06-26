@@ -525,7 +525,7 @@ def _print_help(compact: bool) -> None:
         ("/memory [list|add|show|forget|clear]", "Manage pinned project memory."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),
-        ("/mcp [list|tools|call]", "List or call configured MCP servers."),
+        ("/mcp [list|tools|call|resources|prompts]", "List or call configured MCP servers."),
         ("/tool <name> <json>", "Run a local tool."),
         ("/checkpoint [label]", "Create a local workspace checkpoint."),
         ("/checkpoints", "List local checkpoints."),
@@ -896,6 +896,37 @@ def _mcp(rest: str, state: InteractiveState) -> None:
             raise ValueError("/mcp tools requires a server id")
         mcp.tools_mcp(server_id=parts[1], timeout_seconds=30.0, output_json=False)
         return
+    if parts[0] == "resources":
+        if len(parts) < 2:
+            raise ValueError("/mcp resources requires a server id")
+        mcp.resources_mcp(server_id=parts[1], timeout_seconds=30.0, output_json=False)
+        return
+    if parts[0] == "resource":
+        if len(parts) < 3:
+            raise ValueError("/mcp resource requires: <server> <uri>")
+        mcp.resource_mcp(
+            server_id=parts[1],
+            uri=parts[2],
+            timeout_seconds=30.0,
+            output_json=False,
+        )
+        return
+    if parts[0] == "prompts":
+        if len(parts) < 2:
+            raise ValueError("/mcp prompts requires a server id")
+        mcp.prompts_mcp(server_id=parts[1], timeout_seconds=30.0, output_json=False)
+        return
+    if parts[0] == "prompt":
+        if len(parts) < 3:
+            raise ValueError("/mcp prompt requires: <server> <prompt> [json]")
+        mcp.prompt_mcp(
+            server_id=parts[1],
+            prompt_name=parts[2],
+            arguments_json=parts[3] if len(parts) == 4 else "{}",
+            timeout_seconds=30.0,
+            output_json=False,
+        )
+        return
     if parts[0] == "call":
         if len(parts) < 3:
             raise ValueError("/mcp call requires: <server> <tool> [json]")
@@ -909,7 +940,11 @@ def _mcp(rest: str, state: InteractiveState) -> None:
             output_json=False,
         )
         return
-    raise ValueError("/mcp supports: list, tools <server>, call <server> <tool> [json]")
+    raise ValueError(
+        "/mcp supports: list, tools <server>, call <server> <tool> [json], "
+        "resources <server>, resource <server> <uri>, prompts <server>, "
+        "prompt <server> <name> [json]"
+    )
 
 
 def _normalize_mode(value: str) -> str:

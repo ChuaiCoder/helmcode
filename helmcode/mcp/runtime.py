@@ -35,6 +35,36 @@ class McpToolInfo:
         }
 
 
+@dataclass(slots=True)
+class McpResourceInfo:
+    uri: str
+    name: str
+    description: str
+    mime_type: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "uri": self.uri,
+            "name": self.name,
+            "description": self.description,
+            "mime_type": self.mime_type,
+        }
+
+
+@dataclass(slots=True)
+class McpPromptInfo:
+    name: str
+    description: str
+    arguments: list[dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "arguments": self.arguments,
+        }
+
+
 class McpCallTool:
     description = "Call a configured MCP tool."
     risk_level = RiskLevel.MEDIUM
@@ -101,6 +131,83 @@ def call_mcp_tool(
 ) -> dict[str, Any]:
     with StdioMcpClient(server, timeout_seconds=timeout_seconds) as client:
         return client.request("tools/call", {"name": tool_name, "arguments": arguments})
+
+
+def list_mcp_resources(
+    server: McpServerConfig,
+    *,
+    timeout_seconds: float = 30.0,
+) -> list[McpResourceInfo]:
+    with StdioMcpClient(server, timeout_seconds=timeout_seconds) as client:
+        payload = client.request("resources/list", {})
+    resources = payload.get("resources")
+    if not isinstance(resources, list):
+        raise McpRuntimeError("MCP resources/list response did not contain resources")
+    result: list[McpResourceInfo] = []
+    for item in resources:
+        if not isinstance(item, dict):
+            continue
+        uri = item.get("uri")
+        if not isinstance(uri, str) or not uri:
+            continue
+        result.append(
+            McpResourceInfo(
+                uri=uri,
+                name=_string_or_empty(item.get("name")),
+                description=_string_or_empty(item.get("description")),
+                mime_type=_string_or_empty(item.get("mimeType") or item.get("mime_type")),
+            )
+        )
+    return result
+
+
+def read_mcp_resource(
+    server: McpServerConfig,
+    *,
+    uri: str,
+    timeout_seconds: float = 30.0,
+) -> dict[str, Any]:
+    with StdioMcpClient(server, timeout_seconds=timeout_seconds) as client:
+        return client.request("resources/read", {"uri": uri})
+
+
+def list_mcp_prompts(
+    server: McpServerConfig,
+    *,
+    timeout_seconds: float = 30.0,
+) -> list[McpPromptInfo]:
+    with StdioMcpClient(server, timeout_seconds=timeout_seconds) as client:
+        payload = client.request("prompts/list", {})
+    prompts = payload.get("prompts")
+    if not isinstance(prompts, list):
+        raise McpRuntimeError("MCP prompts/list response did not contain prompts")
+    result: list[McpPromptInfo] = []
+    for item in prompts:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        arguments = item.get("arguments")
+        result.append(
+            McpPromptInfo(
+                name=name,
+                description=_string_or_empty(item.get("description")),
+                arguments=arguments if isinstance(arguments, list) else [],
+            )
+        )
+    return result
+
+
+def get_mcp_prompt(
+    server: McpServerConfig,
+    *,
+    name: str,
+    arguments: dict[str, Any],
+    timeout_seconds: float = 30.0,
+) -> dict[str, Any]:
+    with StdioMcpClient(server, timeout_seconds=timeout_seconds) as client:
+        return client.request("prompts/get", {"name": name, "arguments": arguments})
 
 
 class StdioMcpClient:
@@ -253,3 +360,7 @@ def _content_text(result: dict[str, Any]) -> str:
         if text_parts:
             return "\n".join(text_parts)
     return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def _string_or_empty(value: Any) -> str:
+    return value if isinstance(value, str) else ""

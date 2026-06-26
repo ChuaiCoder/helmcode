@@ -164,6 +164,10 @@ helmcode mcp list
 helmcode mcp add filesystem --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg .
 helmcode mcp tools filesystem
 helmcode mcp call filesystem read_file '{"path":"README.md"}'
+helmcode mcp resources filesystem
+helmcode mcp resource filesystem file://README.md
+helmcode mcp prompts filesystem
+helmcode mcp prompt filesystem summarize '{"path":"README.md"}'
 helmcode mcp export --format claude
 helmcode sessions
 helmcode events
@@ -229,7 +233,7 @@ commands to control the session:
 /skills                       list built-in and project skills
 /skill-match <task>           show skills matched for a task
 /tools                        list local tools
-/mcp [list|tools|call]        list or call configured MCP servers
+/mcp [list|tools|call|resources|prompts] list or call configured MCP servers
 /tool <name> <json>           run a local tool
 /sessions                     show recent local sessions
 /events [session]             show recent audit events
@@ -410,10 +414,13 @@ helmcode hooks clear --yes
 through a real JSON-RPC MCP handshake. `helmcode mcp tools <server>` starts the
 configured stdio server, initializes it, and calls `tools/list`.
 `helmcode mcp call <server> <tool> <json>` calls `tools/call` and records an
-`mcp_tool_result` audit event. MCP tool calls also pass through the same
-Reasonix-style `PreToolUse` and `PostToolUse` hooks as local tools. HTTP and
-SSE MCP servers can still be stored and exported, but runtime calls currently
-fail explicitly instead of pretending they are supported:
+`mcp_tool_result` audit event. `helmcode mcp resources`, `helmcode mcp resource`,
+`helmcode mcp prompts`, and `helmcode mcp prompt` expose the same stdio runtime
+for `resources/list`, `resources/read`, `prompts/list`, and `prompts/get`. MCP
+tool calls also pass through the same Reasonix-style `PreToolUse` and
+`PostToolUse` hooks as local tools. HTTP and SSE MCP servers can still be stored
+and exported, but runtime calls currently fail explicitly instead of pretending
+they are supported:
 
 ```bash
 helmcode mcp add filesystem \
@@ -425,6 +432,10 @@ helmcode mcp list
 helmcode mcp doctor
 helmcode mcp tools filesystem
 helmcode mcp call filesystem read_file '{"path":"README.md"}'
+helmcode mcp resources filesystem
+helmcode mcp resource filesystem file://README.md
+helmcode mcp prompts filesystem
+helmcode mcp prompt filesystem summarize '{"path":"README.md"}'
 helmcode mcp export --format claude
 ```
 

@@ -160,6 +160,42 @@ def test_mcp_stdio_tools_and_call_run_real_json_rpc(monkeypatch, tmp_path: Path)
     assert events[-1].payload["tool"] == "echo"
 
 
+def test_mcp_stdio_resources_and_prompts_run_real_json_rpc(monkeypatch, tmp_path: Path) -> None:
+    _isolate_user_config(monkeypatch, tmp_path)
+    server_path = _write_fake_mcp_server(tmp_path)
+    runner = CliRunner()
+    runner.invoke(
+        app,
+        [
+            "mcp",
+            "add",
+            "fake",
+            "--command",
+            sys.executable,
+            "--arg",
+            str(server_path),
+        ],
+    )
+
+    resources = runner.invoke(app, ["mcp", "resources", "fake", "--json"])
+    resource = runner.invoke(app, ["mcp", "resource", "fake", "fake://readme", "--json"])
+    prompts = runner.invoke(app, ["mcp", "prompts", "fake", "--json"])
+    prompt = runner.invoke(
+        app,
+        ["mcp", "prompt", "fake", "review", '{"topic":"quota"}', "--json"],
+    )
+
+    assert resources.exit_code == 0
+    assert json.loads(resources.output)[0]["uri"] == "fake://readme"
+    assert resource.exit_code == 0
+    assert json.loads(resource.output)["contents"][0]["text"] == "resource text"
+    assert prompts.exit_code == 0
+    assert json.loads(prompts.output)[0]["name"] == "review"
+    assert prompt.exit_code == 0
+    payload = json.loads(prompt.output)
+    assert payload["messages"][0]["content"]["text"] == "Review quota"
+
+
 def test_mcp_call_rejects_non_stdio_runtime(monkeypatch, tmp_path: Path) -> None:
     _isolate_user_config(monkeypatch, tmp_path)
     runner = CliRunner()
@@ -240,6 +276,40 @@ for line in sys.stdin:
     elif method == "tools/call":
         text = message.get("params", {}).get("arguments", {}).get("message", "")
         result = {"content": [{"type": "text", "text": text}]}
+    elif method == "resources/list":
+        result = {
+            "resources": [
+                {
+                    "uri": "fake://readme",
+                    "name": "README",
+                    "description": "fake resource",
+                    "mimeType": "text/plain",
+                }
+            ]
+        }
+    elif method == "resources/read":
+        result = {
+            "contents": [
+                {"uri": "fake://readme", "mimeType": "text/plain", "text": "resource text"}
+            ]
+        }
+    elif method == "prompts/list":
+        result = {
+            "prompts": [
+                {
+                    "name": "review",
+                    "description": "review prompt",
+                    "arguments": [{"name": "topic", "required": True}],
+                }
+            ]
+        }
+    elif method == "prompts/get":
+        topic = message.get("params", {}).get("arguments", {}).get("topic", "")
+        result = {
+            "messages": [
+                {"role": "user", "content": {"type": "text", "text": f"Review {topic}"}}
+            ]
+        }
     else:
         response = {
             "jsonrpc": "2.0",

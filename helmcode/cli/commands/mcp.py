@@ -11,7 +11,15 @@ from rich.console import Console
 from rich.table import Table
 
 from helmcode.core.config import McpServerConfig, load_config, save_user_config
-from helmcode.mcp.runtime import McpCallTool, McpRuntimeError, list_mcp_tools
+from helmcode.mcp.runtime import (
+    McpCallTool,
+    McpRuntimeError,
+    get_mcp_prompt,
+    list_mcp_prompts,
+    list_mcp_resources,
+    list_mcp_tools,
+    read_mcp_resource,
+)
 from helmcode.memory.session_store import SessionStore
 from helmcode.tools.hooked import run_tool_with_lifecycle_hooks
 
@@ -217,6 +225,130 @@ def call_mcp(
     console.print(result.content)
 
 
+@app.command("resources")
+def resources_mcp(
+    server_id: str = typer.Argument(...),
+    timeout_seconds: float = typer.Option(
+        30.0,
+        "--timeout",
+        min=1.0,
+        help="MCP request timeout in seconds.",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """List resources exposed by a stdio MCP server."""
+    server = _runtime_server(server_id)
+    try:
+        resources = list_mcp_resources(server, timeout_seconds=timeout_seconds)
+    except McpRuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = [resource.to_dict() for resource in resources]
+    if output_json:
+        _print_json(payload)
+        return
+    table = Table(title=f"MCP resources: {server.id}")
+    table.add_column("URI")
+    table.add_column("Name")
+    table.add_column("MIME")
+    table.add_column("Description")
+    for resource in resources:
+        table.add_row(resource.uri, resource.name, resource.mime_type, resource.description)
+    if not resources:
+        table.add_row("none", "", "", "")
+    console.print(table)
+
+
+@app.command("resource")
+def resource_mcp(
+    server_id: str = typer.Argument(...),
+    uri: str = typer.Argument(...),
+    timeout_seconds: float = typer.Option(
+        30.0,
+        "--timeout",
+        min=1.0,
+        help="MCP request timeout in seconds.",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Read one resource from a configured stdio MCP server."""
+    server = _runtime_server(server_id)
+    try:
+        payload = read_mcp_resource(server, uri=uri, timeout_seconds=timeout_seconds)
+    except McpRuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json:
+        _print_json(payload)
+        return
+    console.print(_resource_text(payload))
+
+
+@app.command("prompts")
+def prompts_mcp(
+    server_id: str = typer.Argument(...),
+    timeout_seconds: float = typer.Option(
+        30.0,
+        "--timeout",
+        min=1.0,
+        help="MCP request timeout in seconds.",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """List prompts exposed by a stdio MCP server."""
+    server = _runtime_server(server_id)
+    try:
+        prompts = list_mcp_prompts(server, timeout_seconds=timeout_seconds)
+    except McpRuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = [prompt.to_dict() for prompt in prompts]
+    if output_json:
+        _print_json(payload)
+        return
+    table = Table(title=f"MCP prompts: {server.id}")
+    table.add_column("Name")
+    table.add_column("Arguments")
+    table.add_column("Description")
+    for prompt in prompts:
+        table.add_row(
+            prompt.name,
+            ", ".join(_prompt_argument_names(prompt.arguments)),
+            prompt.description,
+        )
+    if not prompts:
+        table.add_row("none", "", "")
+    console.print(table)
+
+
+@app.command("prompt")
+def prompt_mcp(
+    server_id: str = typer.Argument(...),
+    prompt_name: str = typer.Argument(...),
+    arguments_json: str = typer.Argument("{}", help="Prompt arguments as a JSON object."),
+    timeout_seconds: float = typer.Option(
+        30.0,
+        "--timeout",
+        min=1.0,
+        help="MCP request timeout in seconds.",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Get one prompt from a configured stdio MCP server."""
+    server = _runtime_server(server_id)
+    arguments = _parse_json_object(arguments_json, label="arguments")
+    try:
+        payload = get_mcp_prompt(
+            server,
+            name=prompt_name,
+            arguments=arguments,
+            timeout_seconds=timeout_seconds,
+        )
+    except McpRuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json:
+        _print_json(payload)
+        return
+    console.print(_prompt_text(payload))
+
+
 @app.command("export")
 def export_mcp(
     format: str = typer.Option("claude", "--format", help="claude or raw."),
@@ -267,6 +399,49 @@ def _ensure_runtime_supported(server: McpServerConfig) -> None:
         raise typer.BadParameter(
             f"MCP runtime currently supports stdio only; {server.id} uses {server.transport}"
         )
+
+
+def _runtime_server(server_id: str) -> McpServerConfig:
+    server = _find_server(load_config().mcp_servers, server_id)
+    _ensure_runtime_supported(server)
+    return server
+
+
+def _resource_text(payload: dict[str, Any]) -> str:
+    contents = payload.get("contents")
+    if isinstance(contents, list):
+        text_parts = [
+            str(item["text"])
+            for item in contents
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        ]
+        if text_parts:
+            return "\n".join(text_parts)
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _prompt_text(payload: dict[str, Any]) -> str:
+    messages = payload.get("messages")
+    if isinstance(messages, list):
+        rendered = []
+        for item in messages:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role", "message")
+            content = item.get("content")
+            if isinstance(content, dict) and isinstance(content.get("text"), str):
+                rendered.append(f"{role}: {content['text']}")
+        if rendered:
+            return "\n\n".join(rendered)
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _prompt_argument_names(arguments: list[dict[str, Any]]) -> list[str]:
+    names = []
+    for argument in arguments:
+        if isinstance(argument, dict) and isinstance(argument.get("name"), str):
+            names.append(argument["name"])
+    return names
 
 
 def _server_payload(server: McpServerConfig, *, redact: bool) -> dict[str, Any]:

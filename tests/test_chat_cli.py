@@ -604,12 +604,35 @@ def test_mcp_command_routes_runtime_subcommands(monkeypatch, tmp_path: Path) -> 
     def record_call(**kwargs):
         calls.append(("call", kwargs))
 
+    def record_resources(**kwargs):
+        calls.append(("resources", kwargs))
+
+    def record_resource(**kwargs):
+        calls.append(("resource", kwargs))
+
+    def record_prompts(**kwargs):
+        calls.append(("prompts", kwargs))
+
+    def record_prompt(**kwargs):
+        calls.append(("prompt", kwargs))
+
     monkeypatch.setattr(chat.mcp, "list_mcp", record_list)
     monkeypatch.setattr(chat.mcp, "tools_mcp", record_tools)
     monkeypatch.setattr(chat.mcp, "call_mcp", record_call)
+    monkeypatch.setattr(chat.mcp, "resources_mcp", record_resources)
+    monkeypatch.setattr(chat.mcp, "resource_mcp", record_resource)
+    monkeypatch.setattr(chat.mcp, "prompts_mcp", record_prompts)
+    monkeypatch.setattr(chat.mcp, "prompt_mcp", record_prompt)
 
     assert chat.handle_interactive_line("/mcp", state) is True
     assert chat.handle_interactive_line("/mcp tools filesystem", state) is True
+    assert chat.handle_interactive_line("/mcp resources filesystem", state) is True
+    assert chat.handle_interactive_line("/mcp resource filesystem fake://readme", state) is True
+    assert chat.handle_interactive_line("/mcp prompts filesystem", state) is True
+    assert (
+        chat.handle_interactive_line('/mcp prompt filesystem review {"topic":"quota"}', state)
+        is True
+    )
     assert (
         chat.handle_interactive_line('/mcp call filesystem read_file {"path":"README.md"}', state)
         is True
@@ -618,6 +641,27 @@ def test_mcp_command_routes_runtime_subcommands(monkeypatch, tmp_path: Path) -> 
     assert calls == [
         ("list", {"output_json": False}),
         ("tools", {"server_id": "filesystem", "timeout_seconds": 30.0, "output_json": False}),
+        ("resources", {"server_id": "filesystem", "timeout_seconds": 30.0, "output_json": False}),
+        (
+            "resource",
+            {
+                "server_id": "filesystem",
+                "uri": "fake://readme",
+                "timeout_seconds": 30.0,
+                "output_json": False,
+            },
+        ),
+        ("prompts", {"server_id": "filesystem", "timeout_seconds": 30.0, "output_json": False}),
+        (
+            "prompt",
+            {
+                "server_id": "filesystem",
+                "prompt_name": "review",
+                "arguments_json": '{"topic":"quota"}',
+                "timeout_seconds": 30.0,
+                "output_json": False,
+            },
+        ),
         (
             "call",
             {
