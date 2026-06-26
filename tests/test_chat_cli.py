@@ -283,6 +283,8 @@ def test_routes_command_compares_current_session_routing(monkeypatch, tmp_path: 
             "role_model": [],
             "include_repair": False,
             "max_cost_score": 7,
+            "session_budget_score": None,
+            "budget_key": "default",
             "compare_presets": False,
             "output_json": False,
         }
@@ -313,6 +315,8 @@ def test_preset_routes_command_compares_presets(monkeypatch, tmp_path: Path) -> 
             "role_model": [],
             "include_repair": False,
             "max_cost_score": 7,
+            "session_budget_score": None,
+            "budget_key": "default",
             "compare_presets": True,
             "output_json": False,
         }
@@ -339,6 +343,8 @@ def test_routes_command_parses_compare_presets_flag(monkeypatch, tmp_path: Path)
             "role_model": [],
             "include_repair": False,
             "max_cost_score": None,
+            "session_budget_score": None,
+            "budget_key": "default",
             "compare_presets": True,
             "output_json": False,
         }

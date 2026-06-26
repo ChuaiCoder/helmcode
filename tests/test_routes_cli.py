@@ -8,6 +8,28 @@ from typer.testing import CliRunner
 from helmcode.cli.main import app
 
 
+def _write_budget_status(workspace: Path, *, key: str, selected_cost_score: int) -> None:
+    budget_dir = workspace / ".helmcode"
+    budget_dir.mkdir(parents=True, exist_ok=True)
+    (budget_dir / "coding_plan_budget.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "budgets": {
+                    key: {
+                        "allocation_count": 1,
+                        "baseline_cost_score": selected_cost_score,
+                        "selected_cost_score": selected_cost_score,
+                        "estimated_savings_score": 0,
+                        "blocked_count": 0,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_routes_command_compares_fixed_and_quota_json(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app,
@@ -80,6 +102,69 @@ def test_routes_command_compares_all_presets_json(tmp_path: Path) -> None:
     assert routes["quota:balanced"]["summary"]["effective_model_preset"] == "balanced"
     assert routes["quota:pro"]["summary"]["effective_model_preset"] == "pro"
     assert payload["best_route"] in routes
+
+
+def test_routes_command_previews_session_budget_warning(tmp_path: Path) -> None:
+    _write_budget_status(tmp_path, key="chat", selected_cost_score=5)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "routes",
+            "add tests",
+            "--workspace",
+            str(tmp_path),
+            "--session-budget-score",
+            "12",
+            "--budget-key",
+            "chat",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    quota_route = next(route for route in payload["routes"] if route["route"] == "quota")
+    assert payload["budget_key"] == "chat"
+    assert payload["current_session_selected_cost_score"] == 5
+    assert quota_route["session_budget"] == {
+        "budget_key": "chat",
+        "session_budget_score": 12,
+        "current_selected_cost_score": 5,
+        "selected_cost_score": 6,
+        "projected_selected_cost_score": 11,
+        "remaining_score_after": 1,
+        "warning_threshold_score": 10,
+        "budget_warning": True,
+        "budget_exceeded": False,
+    }
+    assert quota_route["summary"]["session_budget_warning"] is True
+    assert quota_route["summary"]["session_budget_exceeded"] is False
+    assert payload["best_route"] == "quota"
+
+
+def test_routes_command_excludes_session_budget_exceeded_routes_from_best(tmp_path: Path) -> None:
+    _write_budget_status(tmp_path, key="chat", selected_cost_score=5)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "routes",
+            "add tests",
+            "--workspace",
+            str(tmp_path),
+            "--session-budget-score",
+            "10",
+            "--budget-key",
+            "chat",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["best_route"] is None
+    assert all(route["summary"]["session_budget_exceeded"] for route in payload["routes"])
 
 
 def test_routes_command_includes_forced_model_route(tmp_path: Path) -> None:

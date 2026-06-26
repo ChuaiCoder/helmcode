@@ -132,6 +132,7 @@ helmcode context "explain the routing flow in @helmcode/models/quota.py"
 helmcode cost "explain the routing flow in @helmcode/models/quota.py"
 helmcode routes "refactor the routing layer and add tests"
 helmcode routes --compare-presets "refactor the routing layer and add tests"
+helmcode routes --session-budget-score 20 --budget-key chat "refactor the routing layer and add tests"
 helmcode retry --mode plan
 helmcode budget --max-score 20
 helmcode budget --key chat --reset --yes
@@ -314,6 +315,10 @@ Pass `--compare-presets` to expand the quota side into `auto`, `economy`,
 `balanced`, and `pro` routes in one local report. Interactive sessions expose
 the same comparison through `/preset-routes <task>` or
 `/routes --compare-presets <task>`.
+Pass `--session-budget-score` with `--budget-key` to preview projected
+cumulative Coding Plan budget usage for each route without recording a new
+budget allocation; routes that would exceed the session budget are excluded from
+the best-route recommendation.
 `helmcode retry [session]` reuses the latest recorded user task, or the latest
 task from a selected session, and sends it through `recommend`, `plan`, or
 `run` mode with the current routing options. This keeps recovery from a failed

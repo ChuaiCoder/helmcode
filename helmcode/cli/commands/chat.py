@@ -310,6 +310,8 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             role_model=_role_model_args(state),
             include_repair=False,
             max_cost_score=state.max_cost_score,
+            session_budget_score=state.session_budget_score,
+            budget_key=state.budget_key,
             compare_presets=compare_presets,
             output_json=False,
         )
@@ -325,6 +327,8 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             role_model=_role_model_args(state),
             include_repair=False,
             max_cost_score=state.max_cost_score,
+            session_budget_score=state.session_budget_score,
+            budget_key=state.budget_key,
             compare_presets=True,
             output_json=False,
         )

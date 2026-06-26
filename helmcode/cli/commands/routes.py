@@ -12,6 +12,7 @@ from helmcode.agent.allocation import TaskAllocation
 from helmcode.cli.commands import agents as agents_command
 from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.workspace import Workspace
+from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY, CodingPlanBudgetLedger
 from helmcode.models.quota import (
     MODEL_PRESET_AUTO,
     MODEL_PRESET_BALANCED,
@@ -54,6 +55,13 @@ def routes_cmd(
         min=1,
         help="Show whether each route exceeds this Coding Plan budget.",
     ),
+    session_budget_score: int | None = typer.Option(
+        None,
+        "--session-budget-score",
+        min=1,
+        help="Preview whether each route would exceed this cumulative Coding Plan budget.",
+    ),
+    budget_key: str = typer.Option("default", "--budget-key", help="Budget ledger key for session budget."),
     compare_presets: bool = typer.Option(
         False,
         "--compare-presets",
@@ -70,6 +78,8 @@ def routes_cmd(
         model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
+        session_budget_score=session_budget_score,
+        budget_key=budget_key,
         compare_presets=compare_presets,
     )
     if output_json:
@@ -87,10 +97,17 @@ def build_routes_report(
     model_overrides: dict[str, str] | None = None,
     include_repair: bool = False,
     max_cost_score: int | None = None,
+    session_budget_score: int | None = None,
+    budget_key: str = DEFAULT_BUDGET_KEY,
     compare_presets: bool = False,
 ) -> dict[str, Any]:
     workspace_info = Workspace.discover(workspace)
     requested_preset = normalize_model_preset(model_preset)
+    budget_status = (
+        CodingPlanBudgetLedger.for_workspace(workspace_info.root_path).status(budget_key)
+        if session_budget_score is not None
+        else None
+    )
     route_specs: list[tuple[str, str, str | None, str]] = [
         ("fixed", "fixed", None, requested_preset),
     ]
@@ -114,6 +131,18 @@ def build_routes_report(
             workspace=workspace_info.root_path,
             include_repair=include_repair,
             max_cost_score=max_cost_score,
+            session_budget_score=session_budget_score,
+            budget_key=budget_key,
+            current_session_selected_cost_score=(
+                budget_status.selected_cost_score
+                if budget_status is not None
+                else None
+            ),
+            warning_threshold_score=(
+                budget_status.warning_threshold(session_budget_score)
+                if budget_status is not None
+                else None
+            ),
         )
         for label, routing, route_model, route_preset in route_specs
     ]
@@ -136,6 +165,13 @@ def build_routes_report(
         "workspace": str(workspace_info.root_path),
         "include_repair": include_repair,
         "max_cost_score": max_cost_score,
+        "session_budget_score": session_budget_score,
+        "budget_key": budget_key,
+        "current_session_selected_cost_score": (
+            budget_status.selected_cost_score
+            if budget_status is not None
+            else None
+        ),
         "forced_model": model,
         "model_preset": requested_preset,
         "compare_presets": compare_presets,
@@ -157,6 +193,10 @@ def _route_payload(
     workspace: Path,
     include_repair: bool,
     max_cost_score: int | None,
+    session_budget_score: int | None,
+    budget_key: str,
+    current_session_selected_cost_score: int | None,
+    warning_threshold_score: int | None,
 ) -> dict[str, Any]:
     try:
         allocation = agents_command.build_allocation(
@@ -183,6 +223,23 @@ def _route_payload(
             "allocation": None,
             "assignment_route": [],
         }
+    session_budget = _session_budget_preview(
+        allocation=allocation,
+        budget_key=budget_key,
+        session_budget_score=session_budget_score,
+        current_selected_cost_score=current_session_selected_cost_score,
+        warning_threshold_score=warning_threshold_score,
+    )
+    summary = _summary(allocation)
+    if session_budget is not None:
+        summary.update(
+            {
+                "session_budget_exceeded": session_budget["budget_exceeded"],
+                "session_budget_warning": session_budget["budget_warning"],
+                "projected_session_selected_cost_score": session_budget["projected_selected_cost_score"],
+                "remaining_session_score_after": session_budget["remaining_score_after"],
+            }
+        )
     return {
         "route": label,
         "routing": routing,
@@ -192,12 +249,40 @@ def _route_payload(
         "model_overrides": model_overrides or {},
         "ok": True,
         "error": None,
-        "summary": _summary(allocation),
+        "summary": summary,
+        "session_budget": session_budget,
         "allocation": allocation.to_dict(),
         "assignment_route": [
             f"{assignment.agent_id}={assignment.model_id}"
             for assignment in allocation.assignments
         ],
+    }
+
+
+def _session_budget_preview(
+    *,
+    allocation: TaskAllocation,
+    budget_key: str,
+    session_budget_score: int | None,
+    current_selected_cost_score: int | None,
+    warning_threshold_score: int | None,
+) -> dict[str, Any] | None:
+    if session_budget_score is None or current_selected_cost_score is None:
+        return None
+    projected = current_selected_cost_score + allocation.selected_cost_score
+    return {
+        "budget_key": budget_key,
+        "session_budget_score": session_budget_score,
+        "current_selected_cost_score": current_selected_cost_score,
+        "selected_cost_score": allocation.selected_cost_score,
+        "projected_selected_cost_score": projected,
+        "remaining_score_after": max(session_budget_score - projected, 0),
+        "warning_threshold_score": warning_threshold_score,
+        "budget_warning": (
+            warning_threshold_score is not None
+            and projected >= warning_threshold_score
+        ),
+        "budget_exceeded": projected > session_budget_score,
     }
 
 
@@ -259,6 +344,10 @@ def _route_state(summary: dict[str, Any]) -> str:
         return "blocked"
     if summary.get("budget_exceeded"):
         return "budget"
+    if summary.get("session_budget_exceeded"):
+        return "session-budget"
+    if summary.get("session_budget_warning"):
+        return "ok warn"
     return "ok"
 
 
@@ -284,6 +373,7 @@ def _best_route(routes: list[dict[str, Any]]) -> dict[str, Any] | None:
         and isinstance(route.get("summary"), dict)
         and not route["summary"].get("blocked")
         and not route["summary"].get("budget_exceeded")
+        and not route["summary"].get("session_budget_exceeded")
     ]
     if not candidates:
         return None
