@@ -140,6 +140,53 @@ def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> N
     ]
 
 
+def test_quota_history_command_uses_quota_cli(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_history(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.quota, "history_quota", record_history)
+
+    assert chat.handle_interactive_line("/quota history", state) is True
+
+    assert calls == [
+        {
+            "workspace": tmp_path,
+            "model_id": None,
+            "unit": None,
+            "role": None,
+            "limit": 20,
+            "output_json": False,
+        }
+    ]
+
+
+def test_quota_reset_requires_interactive_confirmation_word(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_reset(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.quota, "reset_quota", record_reset)
+
+    assert chat.handle_interactive_line("/quota reset", state) is True
+    assert calls == []
+
+    assert chat.handle_interactive_line("/quota reset yes", state) is True
+    assert calls == [
+        {
+            "workspace": tmp_path,
+            "model_id": None,
+            "unit": None,
+            "role": None,
+            "yes": True,
+        }
+    ]
+
+
 def test_exit_command_stops_session(tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
 

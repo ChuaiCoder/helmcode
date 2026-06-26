@@ -123,6 +123,33 @@ class QuotaLedger:
                 continue
         return records
 
+    def replace(self, records: list[ModelCallRecord]) -> None:
+        self.path.parent.mkdir(exist_ok=True)
+        tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
+        with tmp_path.open("w", encoding="utf-8") as fh:
+            for record in records:
+                fh.write(json.dumps(record.to_json(), ensure_ascii=False) + "\n")
+        tmp_path.replace(self.path)
+
+    def clear(
+        self,
+        *,
+        model_id: str | None = None,
+        unit: str | None = None,
+        role: str | None = None,
+    ) -> int:
+        records = self.load()
+        kept: list[ModelCallRecord] = []
+        removed = 0
+        for record in records:
+            if _record_matches(record, model_id=model_id, unit=unit, role=role):
+                removed += 1
+            else:
+                kept.append(record)
+        if removed:
+            self.replace(kept)
+        return removed
+
 
 @dataclass(slots=True)
 class QuotaWindowStatus:
@@ -576,6 +603,22 @@ def _dedupe(values: list[str]) -> list[str]:
             result.append(value)
             seen.add(value)
     return result
+
+
+def _record_matches(
+    record: ModelCallRecord,
+    *,
+    model_id: str | None,
+    unit: str | None,
+    role: str | None,
+) -> bool:
+    if model_id is not None and record.model_id != model_id:
+        return False
+    if unit is not None and record.unit != unit:
+        return False
+    if role is not None and record.role != role:
+        return False
+    return True
 
 
 def _restore_summary(statuses: list[ModelQuotaStatus]) -> str:

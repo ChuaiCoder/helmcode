@@ -20,6 +20,7 @@ from helmcode.cli.commands import (
     mcp,
     models,
     plan,
+    quota,
     run,
     sessions,
     skills,
@@ -123,7 +124,7 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         models.list_models()
         return True
     if command == "/quota":
-        models.model_status(workspace=state.workspace_path)
+        _quota(rest, state)
         return True
     if command == "/budget":
         _set_budget(state, rest)
@@ -343,10 +344,7 @@ def _print_status(state: InteractiveState) -> None:
     quota_table.add_column("Policy")
     quota_table.add_column("Windows")
     for status in selector.status_for_configured_models():
-        windows = "; ".join(
-            f"{window.name} {window.used}/{window.limit} remaining {window.remaining}"
-            for window in status.windows
-        )
+        windows = quota._quota_windows_text(status)
         quota_table.add_row(status.model_id, status.policy_id or "unmetered", windows or "no local policy")
     console.print(quota_table)
 
@@ -371,7 +369,7 @@ def _print_help(compact: bool) -> None:
         ("/checkpoints", "List local checkpoints."),
         ("/restore <id>", "Restore a checkpoint after confirmation."),
         ("/models", "Show configured roles and model profiles."),
-        ("/quota", "Show local quota estimates."),
+        ("/quota [history|reset]", "Show or manage local quota estimates."),
         ("/index", "Show local file index status."),
         ("/changed", "Show files changed since index build."),
         ("/sessions", "Show recent local sessions."),
@@ -469,6 +467,37 @@ def _parse_on_off(value: str, current: bool) -> bool:
 def _require_task(task: str, command: str) -> None:
     if not task:
         raise ValueError(f"{command} requires a task")
+
+
+def _quota(rest: str, state: InteractiveState) -> None:
+    parts = rest.split()
+    if not parts:
+        quota.status_quota(workspace=state.workspace_path)
+        return
+    subcommand = parts[0]
+    if subcommand == "history":
+        quota.history_quota(
+            workspace=state.workspace_path,
+            model_id=None,
+            unit=None,
+            role=None,
+            limit=20,
+            output_json=False,
+        )
+        return
+    if subcommand == "reset":
+        if len(parts) > 1 and parts[1] in {"yes", "--yes", "-y"}:
+            quota.reset_quota(
+                workspace=state.workspace_path,
+                model_id=None,
+                unit=None,
+                role=None,
+                yes=True,
+            )
+            return
+        console.print("Run `/quota reset yes` to clear the local quota ledger from the interactive session.")
+        return
+    raise ValueError("/quota supports: history, reset")
 
 
 def _normalize_mode(value: str) -> str:

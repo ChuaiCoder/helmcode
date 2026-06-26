@@ -127,6 +127,9 @@ helmcode models recommend "help me add tests for the auth module"
 helmcode models status
 helmcode agents plan "refactor the routing layer and add tests"
 helmcode agents plan --json "refactor the routing layer and add tests"
+helmcode quota
+helmcode quota history --limit 20
+helmcode quota reset --unit token --yes
 helmcode checkpoint create "before risky refactor"
 helmcode checkpoint restore <checkpoint-id> --dry-run
 helmcode restore <checkpoint-id> --yes
@@ -173,7 +176,7 @@ commands to control the session:
 /checkpoints                  list local checkpoints
 /restore <id>                 restore a checkpoint after confirmation
 /models                       show configured roles and profiles
-/quota                        show local quota estimates
+/quota [history|reset]        show or manage local quota estimates
 /index                        show local file index status
 /changed                      show files changed since index build
 /skills                       list built-in and project skills
@@ -292,6 +295,11 @@ the same unit; Coding Plan allocation must satisfy all of them before assigning
 the agent. Runtime calls record one request unit plus the returned token amount
 when both policy units are present, so later recommendations see the same
 constraints that were actually spent.
+
+Use `helmcode quota history` to inspect the local quota ledger that drives these
+recommendations. If a provider-side quota was manually reset or a local dry run
+record should be discarded, `helmcode quota reset` can clear all ledger entries
+or only entries matching `--model`, `--unit`, or `--role`.
 
 Allocation simulates quota reservations inside the proposed multi-agent plan
 without writing to the quota ledger. If two agents would use the same model and

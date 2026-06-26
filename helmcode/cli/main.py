@@ -19,6 +19,7 @@ from helmcode.cli.commands import (
     mcp,
     models,
     plan,
+    quota,
     run,
     sessions,
     setup,
@@ -41,6 +42,7 @@ app.add_typer(index.app, name="index")
 app.add_typer(skills.app, name="skills")
 app.add_typer(tools.app, name="tools")
 app.add_typer(mcp.app, name="mcp")
+app.add_typer(quota.app, name="quota")
 
 
 @app.callback(invoke_without_command=True)
