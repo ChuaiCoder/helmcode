@@ -591,6 +591,48 @@ def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> N
     ]
 
 
+def test_mcp_command_routes_runtime_subcommands(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def record_list(**kwargs):
+        calls.append(("list", kwargs))
+
+    def record_tools(**kwargs):
+        calls.append(("tools", kwargs))
+
+    def record_call(**kwargs):
+        calls.append(("call", kwargs))
+
+    monkeypatch.setattr(chat.mcp, "list_mcp", record_list)
+    monkeypatch.setattr(chat.mcp, "tools_mcp", record_tools)
+    monkeypatch.setattr(chat.mcp, "call_mcp", record_call)
+
+    assert chat.handle_interactive_line("/mcp", state) is True
+    assert chat.handle_interactive_line("/mcp tools filesystem", state) is True
+    assert (
+        chat.handle_interactive_line('/mcp call filesystem read_file {"path":"README.md"}', state)
+        is True
+    )
+
+    assert calls == [
+        ("list", {"output_json": False}),
+        ("tools", {"server_id": "filesystem", "timeout_seconds": 30.0, "output_json": False}),
+        (
+            "call",
+            {
+                "server_id": "filesystem",
+                "tool_name": "read_file",
+                "arguments_json": '{"path":"README.md"}',
+                "workspace": tmp_path,
+                "permission_mode": "suggest",
+                "timeout_seconds": 30.0,
+                "output_json": False,
+            },
+        ),
+    ]
+
+
 def test_quota_history_command_uses_quota_cli(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

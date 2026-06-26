@@ -312,7 +312,7 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         tools.list_tools()
         return True
     if command == "/mcp":
-        mcp.list_mcp()
+        _mcp(rest, state)
         return True
     if command == "/tool":
         parts = rest.split(maxsplit=1)
@@ -525,7 +525,7 @@ def _print_help(compact: bool) -> None:
         ("/memory [list|add|show|forget|clear]", "Manage pinned project memory."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),
-        ("/mcp", "List configured MCP servers."),
+        ("/mcp [list|tools|call]", "List or call configured MCP servers."),
         ("/tool <name> <json>", "Run a local tool."),
         ("/checkpoint [label]", "Create a local workspace checkpoint."),
         ("/checkpoints", "List local checkpoints."),
@@ -884,6 +884,32 @@ def _memory(rest: str, state: InteractiveState) -> None:
         )
         return
     raise ValueError("/memory supports: list, add <text>, show <id>, forget <id>, clear")
+
+
+def _mcp(rest: str, state: InteractiveState) -> None:
+    parts = rest.split(maxsplit=3)
+    if not parts or parts[0] == "list":
+        mcp.list_mcp(output_json=False)
+        return
+    if parts[0] == "tools":
+        if len(parts) < 2:
+            raise ValueError("/mcp tools requires a server id")
+        mcp.tools_mcp(server_id=parts[1], timeout_seconds=30.0, output_json=False)
+        return
+    if parts[0] == "call":
+        if len(parts) < 3:
+            raise ValueError("/mcp call requires: <server> <tool> [json]")
+        mcp.call_mcp(
+            server_id=parts[1],
+            tool_name=parts[2],
+            arguments_json=parts[3] if len(parts) == 4 else "{}",
+            workspace=state.workspace_path,
+            permission_mode="suggest",
+            timeout_seconds=30.0,
+            output_json=False,
+        )
+        return
+    raise ValueError("/mcp supports: list, tools <server>, call <server> <tool> [json]")
 
 
 def _normalize_mode(value: str) -> str:

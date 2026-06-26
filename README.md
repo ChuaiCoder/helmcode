@@ -162,6 +162,8 @@ helmcode tools list
 helmcode tools run read_file --param path=README.md
 helmcode mcp list
 helmcode mcp add filesystem --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg .
+helmcode mcp tools filesystem
+helmcode mcp call filesystem read_file '{"path":"README.md"}'
 helmcode mcp export --format claude
 helmcode sessions
 helmcode events
@@ -227,7 +229,7 @@ commands to control the session:
 /skills                       list built-in and project skills
 /skill-match <task>           show skills matched for a task
 /tools                        list local tools
-/mcp                          list configured MCP servers
+/mcp [list|tools|call]        list or call configured MCP servers
 /tool <name> <json>           run a local tool
 /sessions                     show recent local sessions
 /events [session]             show recent audit events
@@ -404,9 +406,14 @@ helmcode hooks require <hook-id>
 helmcode hooks clear --yes
 ```
 
-`helmcode mcp` manages MCP server configuration for future external tool
-runtime integration. This is configuration and validation only; it does not
-pretend to call MCP tools yet:
+`helmcode mcp` manages MCP server configuration and can run stdio MCP tools
+through a real JSON-RPC MCP handshake. `helmcode mcp tools <server>` starts the
+configured stdio server, initializes it, and calls `tools/list`.
+`helmcode mcp call <server> <tool> <json>` calls `tools/call` and records an
+`mcp_tool_result` audit event. MCP tool calls also pass through the same
+Reasonix-style `PreToolUse` and `PostToolUse` hooks as local tools. HTTP and
+SSE MCP servers can still be stored and exported, but runtime calls currently
+fail explicitly instead of pretending they are supported:
 
 ```bash
 helmcode mcp add filesystem \
@@ -416,6 +423,8 @@ helmcode mcp add filesystem \
   --arg .
 helmcode mcp list
 helmcode mcp doctor
+helmcode mcp tools filesystem
+helmcode mcp call filesystem read_file '{"path":"README.md"}'
 helmcode mcp export --format claude
 ```
 

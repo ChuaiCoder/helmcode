@@ -11,6 +11,9 @@ from rich.console import Console
 from rich.table import Table
 
 from helmcode.core.config import McpServerConfig, load_config, save_user_config
+from helmcode.mcp.runtime import McpCallTool, McpRuntimeError, list_mcp_tools
+from helmcode.memory.session_store import SessionStore
+from helmcode.tools.hooked import run_tool_with_lifecycle_hooks
 
 console = Console()
 app = typer.Typer(help="Manage MCP server configuration.")
@@ -128,6 +131,92 @@ def doctor_mcp(output_json: bool = typer.Option(False, "--json", help="Print mac
     console.print(table)
 
 
+@app.command("tools")
+def tools_mcp(
+    server_id: str = typer.Argument(...),
+    timeout_seconds: float = typer.Option(
+        30.0,
+        "--timeout",
+        min=1.0,
+        help="MCP request timeout in seconds.",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """List tools exposed by a stdio MCP server."""
+    server = _find_server(load_config().mcp_servers, server_id)
+    _ensure_runtime_supported(server)
+    try:
+        tools = list_mcp_tools(server, timeout_seconds=timeout_seconds)
+    except McpRuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = [tool.to_dict() for tool in tools]
+    if output_json:
+        _print_json(payload)
+        return
+    table = Table(title=f"MCP tools: {server.id}")
+    table.add_column("Name")
+    table.add_column("Description")
+    for tool in tools:
+        table.add_row(tool.name, tool.description)
+    if not tools:
+        table.add_row("none", "")
+    console.print(table)
+
+
+@app.command("call")
+def call_mcp(
+    server_id: str = typer.Argument(...),
+    tool_name: str = typer.Argument(...),
+    arguments_json: str = typer.Argument("{}", help="Tool arguments as a JSON object."),
+    workspace: Path = typer.Option(Path.cwd(), "--workspace", "-w"),
+    permission_mode: str = typer.Option("suggest", "--permission"),
+    timeout_seconds: float = typer.Option(
+        30.0,
+        "--timeout",
+        min=1.0,
+        help="MCP request timeout in seconds.",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Call a tool on a configured stdio MCP server."""
+    server = _find_server(load_config().mcp_servers, server_id)
+    _ensure_runtime_supported(server)
+    arguments = _parse_json_object(arguments_json, label="arguments")
+    workspace_path = workspace.resolve()
+    session_store = SessionStore(workspace_path)
+    tool = McpCallTool(server, timeout_seconds=timeout_seconds)
+    raw_input = {
+        "server_id": server.id,
+        "tool_name": tool_name,
+        "arguments": arguments,
+    }
+    result = run_tool_with_lifecycle_hooks(
+        tool,
+        raw_input,
+        workspace_path=workspace_path,
+        permission_mode=permission_mode,
+        session_store=session_store,
+        session_id="mcp-cli",
+    )
+    session_store.record(
+        "mcp-cli",
+        "mcp_tool_result",
+        {
+            "server_id": server.id,
+            "tool": tool_name,
+            "arguments": arguments,
+            "ok": result.ok,
+            "content": result.content,
+            "data": result.data,
+        },
+    )
+    payload = {"server_id": server.id, "tool": tool_name, **result.model_dump(mode="json")}
+    if output_json:
+        _print_json(payload)
+        return
+    console.print(result.content)
+
+
 @app.command("export")
 def export_mcp(
     format: str = typer.Option("claude", "--format", help="claude or raw."),
@@ -159,6 +248,25 @@ def _parse_env(values: list[str]) -> dict[str, str]:
             raise typer.BadParameter("--env key cannot be empty")
         parsed[key] = env_value
     return parsed
+
+
+def _parse_json_object(value: str, *, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{label} must be JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise typer.BadParameter(f"{label} must be a JSON object")
+    return payload
+
+
+def _ensure_runtime_supported(server: McpServerConfig) -> None:
+    if not server.enabled:
+        raise typer.BadParameter(f"MCP server is disabled: {server.id}")
+    if server.transport != "stdio":
+        raise typer.BadParameter(
+            f"MCP runtime currently supports stdio only; {server.id} uses {server.transport}"
+        )
 
 
 def _server_payload(server: McpServerConfig, *, redact: bool) -> dict[str, Any]:
