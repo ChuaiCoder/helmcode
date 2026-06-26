@@ -337,12 +337,14 @@ class CodingPlanTaskAllocator:
                             override_reason=override_reason,
                             prefer_different_from=coding_model if agent.id == "reviewer" else None,
                             reserved_records=_flatten_reservations(reservation_groups),
+                            minimum_amounts_by_unit=self._minimum_amounts_for(agent),
                         )
                     except ModelError as exc:
                         message = str(exc)
                         if (
                             agent.required
                             and _looks_like_capacity_issue(message)
+                            and "insufficient" not in message.lower()
                             and self._release_optional_reservation(
                                 assignments,
                                 reservation_groups,
@@ -642,6 +644,9 @@ class CodingPlanTaskAllocator:
         if unit == "token":
             return max(agent.estimated_tokens + self._context_token_estimate_for(agent), 1)
         return 1
+
+    def _minimum_amounts_for(self, agent: AgentProfile) -> dict[str, int]:
+        return {"request": 1, "token": self._reservation_amount_for_unit(agent, "token")}
 
     def _baseline_model(self) -> str | None:
         return self.config.model_roles.get(MODEL_ROLE_CODING) or self.config.model_roles.get("default")

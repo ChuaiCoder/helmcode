@@ -569,7 +569,8 @@ def test_allocation_blocks_when_second_matching_policy_lacks_capacity(tmp_path: 
 
     assert [assignment.agent_id for assignment in allocation.assignments] == ["scout"]
     assert any(
-        "blocked:planner:main:planner has insufficient quota capacity under planning_tokens" in warning
+        "blocked:planner:No quota capacity for planning/plan. "
+        "main:planner has insufficient token capacity under planning_tokens" in warning
         for warning in allocation.warnings
     )
     assert allocation.blocked is True
@@ -589,10 +590,44 @@ def test_token_quota_blocks_when_estimated_agent_tokens_exceed_remaining(tmp_pat
 
     assert [assignment.agent_id for assignment in allocation.assignments] == ["scout"]
     assert any(
-        "blocked:planner:main:planner has insufficient quota capacity under planning_tokens" in warning
+        "blocked:planner:No quota capacity for planning/plan. "
+        "main:planner has insufficient token capacity under planning_tokens" in warning
         for warning in allocation.warnings
     )
     assert allocation.blocked is True
+
+
+def test_token_quota_uses_next_candidate_when_cheapest_lacks_estimated_capacity(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:cheap-planner",
+            preferred_for=["plan"],
+            cost_tier="low",
+        )
+    )
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="cheap_planning_tokens",
+            model_patterns=["main:cheap-planner"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=2_000)],
+        ),
+        QuotaPolicyConfig(
+            id="main_planning_tokens",
+            model_patterns=["main:planner"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=3_000)],
+        ),
+    ]
+
+    allocation = _allocator(config, tmp_path).allocate("plan repository architecture")
+
+    planner = next(assignment for assignment in allocation.assignments if assignment.agent_id == "planner")
+    assert planner.model_id == "main:planner"
+    assert planner.quota_policy_id == "main_planning_tokens"
+    assert planner.quota_reserved_amount == 2_500
+    assert allocation.blocked is False
 
 
 def test_configured_agent_estimated_tokens_control_token_reservation(tmp_path: Path) -> None:

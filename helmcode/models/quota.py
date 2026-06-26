@@ -352,6 +352,7 @@ class QuotaAwareSelector:
         override_reason: str | None = None,
         prefer_different_from: str | None = None,
         reserved_records: list[ModelCallRecord] | None = None,
+        minimum_amounts_by_unit: dict[str, int] | None = None,
     ) -> ModelSelection:
         task_type = task_type or task_type_for_role(role, task)
         if override_model_id:
@@ -396,9 +397,11 @@ class QuotaAwareSelector:
             )
 
         exhausted: list[ModelQuotaStatus] = []
+        insufficient: list[tuple[ModelQuotaStatus, str, str, int, int]] = []
         for model_id in candidates:
             status = quota_state.status_for_model(model_id)
-            if status.available:
+            minimum_shortfall = _minimum_shortfall(status, minimum_amounts_by_unit)
+            if status.available and minimum_shortfall is None:
                 reason = f"selected for {task_type}"
                 if self.model_preset not in {MODEL_PRESET_BALANCED, MODEL_PRESET_AUTO}:
                     reason += f" using {self.model_preset} preset"
@@ -414,9 +417,11 @@ class QuotaAwareSelector:
                     routing_mode=self.routing_mode,
                     quota_status=status,
                 )
+            if status.available and minimum_shortfall is not None:
+                insufficient.append((status, *minimum_shortfall))
             exhausted.append(status)
 
-        restore_text = _restore_summary(exhausted)
+        restore_text = _restore_summary(exhausted, insufficient=insufficient)
         raise ModelError(f"No quota capacity for {role}/{task_type}. {restore_text}")
 
     def record_call(
@@ -478,7 +483,11 @@ class QuotaAwareSelector:
         if role_model:
             candidates.append(role_model)
         default_model = self.config.model_roles.get(MODEL_ROLE_DEFAULT)
-        if default_model:
+        if default_model and (
+            not preferred
+            or default_model == role_model
+            or self._profile_can_handle(default_model, task_type)
+        ):
             candidates.append(default_model)
         return _expand_fallbacks(_dedupe(candidates), self.profiles)
 
@@ -497,6 +506,10 @@ class QuotaAwareSelector:
         if self.model_preset == MODEL_PRESET_PRO:
             cost = -cost
         return cost, _quota_pressure_sort_key(quota_state.status_for_model(profile.id)), profile.id
+
+    def _profile_can_handle(self, model_id: str, task_type: str) -> bool:
+        profile = self.profiles.get(model_id)
+        return profile is not None and task_type in profile.preferred_for
 
 
 def classify_task(task: str) -> str:
@@ -671,7 +684,33 @@ def _quota_pressure_sort_key(status: ModelQuotaStatus) -> tuple[int, int]:
     return 0, -remaining
 
 
-def _restore_summary(statuses: list[ModelQuotaStatus]) -> str:
+def _minimum_shortfall(
+    status: ModelQuotaStatus,
+    minimum_amounts_by_unit: dict[str, int] | None,
+) -> tuple[str, str, int, int] | None:
+    if not minimum_amounts_by_unit:
+        return None
+    for policy_status in status.policy_statuses:
+        required = minimum_amounts_by_unit.get(policy_status.unit)
+        if required is None:
+            continue
+        remaining = policy_status.tightest_remaining
+        if remaining is not None and remaining < required:
+            return policy_status.policy_id, policy_status.unit, required, remaining
+    return None
+
+
+def _restore_summary(
+    statuses: list[ModelQuotaStatus],
+    *,
+    insufficient: list[tuple[ModelQuotaStatus, str, str, int, int]] | None = None,
+) -> str:
+    if insufficient:
+        status, policy_id, unit, required, remaining = insufficient[0]
+        return (
+            f"{status.model_id} has insufficient {unit} capacity under {policy_id}; "
+            f"needs estimated {required}, remaining {remaining}."
+        )
     restore_times = [status.next_restore_at for status in statuses if status.next_restore_at]
     if not restore_times:
         return "No reset time is available."

@@ -473,7 +473,10 @@ list the agent task type in `preferred_for`, ordered by `cost_tier`, local quota
 pressure, and model id. When two profiled models have the same cost tier,
 helmcode prefers the one with more remaining local quota, so a nearly exhausted
 cheap lane is preserved when an equally cheap lane is still wide open. The
-configured role model and default model remain fallbacks, so unprofiled legacy
+allocator also passes each agent's estimated token reservation into selection,
+so a cheap model with some token quota left but not enough for the planned agent
+is skipped in favor of the next capable route instead of blocking the whole
+allocation. Configured role models and the default model remain fallbacks, so unprofiled legacy
 configs still work and `--routing fixed` continues to use the role mapping
 directly. This is the main Coding Plan quota-saving behavior: cheap models can
 handle scan, summarize, planning, or simple coding phases before the configured
