@@ -12,6 +12,8 @@ def test_interactive_state_commands_update_mode_routing_and_model(tmp_path: Path
     assert chat.handle_interactive_line("/routing fixed", state) is True
     assert chat.handle_interactive_line("/model main:coder", state) is True
     assert chat.handle_interactive_line("/budget 5", state) is True
+    assert chat.handle_interactive_line("/session-budget 12", state) is True
+    assert chat.handle_interactive_line("/session-budget key chat", state) is True
     assert chat.handle_interactive_line("/cache off", state) is True
     assert chat.handle_interactive_line("/yes on", state) is True
     assert chat.handle_interactive_line("/tests off", state) is True
@@ -20,6 +22,8 @@ def test_interactive_state_commands_update_mode_routing_and_model(tmp_path: Path
     assert state.routing_mode == "fixed"
     assert state.forced_model == "main:coder"
     assert state.max_cost_score == 5
+    assert state.session_budget_score == 12
+    assert state.budget_key == "chat"
     assert state.preplan_cache is False
     assert state.yes is True
     assert state.run_tests is False
@@ -57,6 +61,8 @@ def test_run_command_passes_session_flags(monkeypatch, tmp_path: Path) -> None:
         routing_mode="quota",
         forced_model="main:coder",
         max_cost_score=6,
+        session_budget_score=12,
+        budget_key="chat",
         preplan_cache=False,
         yes=True,
         run_tests=False,
@@ -79,6 +85,8 @@ def test_run_command_passes_session_flags(monkeypatch, tmp_path: Path) -> None:
             "routing": "quota",
             "model": "main:coder",
             "max_cost_score": 6,
+            "session_budget_score": 12,
+            "budget_key": "chat",
             "no_preplan_cache": True,
         }
     ]
@@ -208,6 +216,8 @@ def test_retry_command_uses_current_session_flags(monkeypatch, tmp_path: Path) -
         routing_mode="quota",
         forced_model="main:planner",
         max_cost_score=8,
+        session_budget_score=12,
+        budget_key="chat",
         preplan_cache=False,
         yes=True,
         run_tests=False,
@@ -229,6 +239,8 @@ def test_retry_command_uses_current_session_flags(monkeypatch, tmp_path: Path) -
             "routing": "quota",
             "model": "main:planner",
             "max_cost_score": 8,
+            "session_budget_score": 12,
+            "budget_key": "chat",
             "yes": True,
             "no_tests": True,
             "no_preplan_cache": True,
@@ -243,6 +255,8 @@ def test_new_command_resets_interactive_state(tmp_path: Path) -> None:
         routing_mode="fixed",
         forced_model="main:coder",
         max_cost_score=5,
+        session_budget_score=12,
+        budget_key="chat",
         preplan_cache=False,
         yes=True,
         run_tests=False,
@@ -254,6 +268,8 @@ def test_new_command_resets_interactive_state(tmp_path: Path) -> None:
     assert state.routing_mode == "quota"
     assert state.forced_model is None
     assert state.max_cost_score is None
+    assert state.session_budget_score is None
+    assert state.budget_key == "default"
     assert state.preplan_cache is True
     assert state.yes is False
     assert state.run_tests is True

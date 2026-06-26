@@ -6,6 +6,7 @@ from helmcode.agent.allocation import CodingPlanTaskAllocator, TaskAllocation
 from helmcode.agent.session import AgentSession
 from helmcode.context.workspace import Workspace
 from helmcode.core.exceptions import ModelError
+from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY, CodingPlanBudgetLedger
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ModelResponse, ProviderAdapter
 from helmcode.models.quota import ModelSelection, QuotaAwareSelector
@@ -36,6 +37,8 @@ class AgentRuntime:
         include_repair: bool = False,
         block_on_required: bool = True,
         max_cost_score: int | None = None,
+        session_budget_score: int | None = None,
+        budget_key: str = DEFAULT_BUDGET_KEY,
     ) -> TaskAllocation | None:
         if self.selector is None:
             return None
@@ -66,6 +69,32 @@ class AgentRuntime:
             )
         if block_on_required and allocation.blocked:
             raise ModelError("Coding Plan allocation blocked: " + "; ".join(allocation.warnings))
+        if session_budget_score is not None:
+            ledger = CodingPlanBudgetLedger.for_workspace(self.workspace.root_path)
+            decision = ledger.check(allocation, key=budget_key, max_score=session_budget_score)
+            if not decision.allowed:
+                ledger.record_blocked(key=budget_key)
+                blocked_payload = {
+                    "budget_key": budget_key,
+                    "selected_cost_score": allocation.selected_cost_score,
+                    "current_selected_cost_score": decision.status.selected_cost_score,
+                    "projected_selected_cost_score": decision.projected_selected_cost_score,
+                    "session_budget_score": session_budget_score,
+                    "reason": decision.reason,
+                }
+                session.record("task_session_budget_blocked", blocked_payload)
+                self._record(session.session_id, "task_session_budget_blocked", blocked_payload)
+                raise ModelError("Coding Plan session budget exceeded: " + decision.reason)
+            status = ledger.record_allocation(allocation, key=budget_key)
+            reserved_payload = {
+                "budget_key": budget_key,
+                "selected_cost_score": allocation.selected_cost_score,
+                "session_selected_cost_score": status.selected_cost_score,
+                "session_budget_score": session_budget_score,
+                "remaining_score": status.remaining(session_budget_score),
+            }
+            session.record("task_session_budget_reserved", reserved_payload)
+            self._record(session.session_id, "task_session_budget_reserved", reserved_payload)
         return allocation
 
     def select_model(

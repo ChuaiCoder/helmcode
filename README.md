@@ -121,12 +121,15 @@ helmcode init
 helmcode setup
 helmcode run "help me add tests for the auth module"
 helmcode run --max-cost-score 8 "help me add tests for the auth module"
+helmcode run --session-budget-score 20 --budget-key chat "help me add tests for the auth module"
 helmcode run --no-preplan-cache "help me add tests for the auth module"
 helmcode plan "explain the routing flow in @helmcode/models/quota.py"
 helmcode context "explain the routing flow in @helmcode/models/quota.py"
 helmcode cost "explain the routing flow in @helmcode/models/quota.py"
 helmcode routes "refactor the routing layer and add tests"
 helmcode retry --mode plan
+helmcode budget --max-score 20
+helmcode budget --key chat --reset --yes
 helmcode savings
 helmcode allocations
 helmcode plans --session <session-id>
@@ -187,6 +190,9 @@ commands to control the session:
 /routing fixed|quota|recommend set model routing for the session
 /model <provider:model|clear> force or clear a model override
 /budget <score|clear>         set a Coding Plan max cost score for plan/run
+/session-budget <score|clear> set a cumulative Coding Plan budget
+/session-budget key <name>    switch the cumulative budget ledger key
+/session-budget reset yes     reset the current cumulative budget key
 /cache on|off                 toggle cached scout/summarizer pre-plan findings
 /agents <task>                show quota-saving multi-agent assignment
 /context <task>               preview model context without calling a provider
@@ -236,6 +242,16 @@ allocation and blocks before any provider call. In interactive sessions,
 `/budget <n>` applies the same cap to `/agents`, `/plan`, `/run`, and bare
 prompts.
 
+Use `--session-budget-score <n>` on `helmcode plan`, `helmcode run`, or
+`helmcode retry` to enforce a cumulative Coding Plan budget across repeated
+tasks. The budget ledger is stored under `.helmcode/coding_plan_budget.json` and
+is keyed by `--budget-key`, which defaults to `default`. `helmcode budget`
+shows selected cost, baseline cost, estimated savings, blocks, and remaining
+score for that ledger. In interactive sessions, `/session-budget <n>` enables
+the same cumulative cap, `/session-budget key <name>` switches keys, and
+`/session-budget reset yes` clears the current key. Recommendation mode still
+does not consume budget because it does not call a provider.
+
 Use `@relative/path` in a task to force specific local files into the model
 context:
 
@@ -267,6 +283,8 @@ versus fixed routing, budget state, and each agent-to-model assignment.
 task from a selected session, and sends it through `recommend`, `plan`, or
 `run` mode with the current routing options. This keeps recovery from a failed
 or interrupted task explicit without copying prompts out of the audit log.
+`helmcode budget` reports cumulative Coding Plan budget usage for a selected
+ledger key or for all known keys. It is local-only and does not call a provider.
 `helmcode savings` aggregates historical `task_allocated` events from local
 sessions to show baseline versus selected cost score, estimated savings rate,
 budget blocks, and cost distribution by agent and model.
@@ -451,8 +469,10 @@ Every `plan` and `run` workflow records local session events under
 `task_allocated` events before model calls, `preplan_agent_completed` events for
 cheap scout/summarizer work, `preplan_agent_cache_hit` events when cached
 findings avoid a model call, `model_blocked` events when quota prevents a real
-provider call, `task_budget_blocked` events when a cost-score cap prevents a
-run, and `model_selected` or `model_called` events as execution proceeds. Use
+provider call, `task_budget_blocked` events when a per-task cost-score cap
+prevents a run, `task_session_budget_reserved` events when cumulative budget is
+consumed, `task_session_budget_blocked` events when cumulative budget prevents
+a run, and `model_selected` or `model_called` events as execution proceeds. Use
 these commands to inspect what the agent allocated, selected, called,
 generated, applied, and verified:
 

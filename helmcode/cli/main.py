@@ -10,6 +10,7 @@ from helmcode.cli.commands import (
     agents,
     allocations,
     apply,
+    budget,
     checkpoints,
     chat,
     compact,
@@ -79,6 +80,7 @@ app.command("savings")(savings.savings_cmd)
 app.command("allocations")(allocations.allocations_cmd)
 app.command("plans")(allocations.allocations_cmd)
 app.command("keys")(keys.keys_cmd)
+app.command("budget")(budget.budget_cmd)
 app.command("apply")(apply.apply_last_patch)
 app.command("diff")(diff.show_pending_diff)
 app.command("doctor")(doctor.doctor)

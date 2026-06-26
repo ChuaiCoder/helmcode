@@ -12,6 +12,7 @@ from helmcode.cli.commands import (
     agents,
     allocations,
     apply,
+    budget as budget_command,
     checkpoints,
     config as config_command,
     compact,
@@ -51,6 +52,8 @@ class InteractiveState:
     routing_mode: str = "quota"
     forced_model: str | None = None
     max_cost_score: int | None = None
+    session_budget_score: int | None = None
+    budget_key: str = "default"
     preplan_cache: bool = True
     yes: bool = False
     run_tests: bool = True
@@ -67,6 +70,13 @@ def chat_cmd(
         min=1,
         help="Block plan/run before provider calls if Coding Plan selected cost score exceeds this value.",
     ),
+    session_budget_score: int | None = typer.Option(
+        None,
+        "--session-budget-score",
+        min=1,
+        help="Block plan/run before provider calls if cumulative Coding Plan selected cost exceeds this value.",
+    ),
+    budget_key: str = typer.Option("default", "--budget-key", help="Budget ledger key for session budget."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Approve safe confirmations where allowed."),
     no_tests: bool = typer.Option(False, "--no-tests", help="Skip tests for /run."),
     no_preplan_cache: bool = typer.Option(
@@ -83,6 +93,8 @@ def chat_cmd(
         routing_mode=_normalize_routing(routing or config.routing_mode),
         forced_model=model,
         max_cost_score=max_cost_score,
+        session_budget_score=session_budget_score,
+        budget_key=budget_key,
         preplan_cache=not no_preplan_cache,
         yes=yes,
         run_tests=not no_tests,
@@ -148,6 +160,9 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/budget":
         _set_budget(state, rest)
         return True
+    if command == "/session-budget":
+        _session_budget(state, rest)
+        return True
     if command == "/cache":
         state.preplan_cache = _parse_on_off(rest, current=state.preplan_cache)
         console.print(f"Pre-plan cache: {'on' if state.preplan_cache else 'off'}")
@@ -176,6 +191,8 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             routing=state.routing_mode,
             model=state.forced_model,
             max_cost_score=state.max_cost_score,
+            session_budget_score=state.session_budget_score,
+            budget_key=state.budget_key,
             yes=state.yes,
             no_tests=not state.run_tests,
             no_preplan_cache=not state.preplan_cache,
@@ -399,6 +416,8 @@ def _plan(task: str, state: InteractiveState) -> None:
         routing=routing,
         model=state.forced_model,
         max_cost_score=state.max_cost_score,
+        session_budget_score=state.session_budget_score,
+        budget_key=state.budget_key,
         no_preplan_cache=not state.preplan_cache,
     )
 
@@ -412,6 +431,8 @@ def _run(task: str, state: InteractiveState) -> None:
         routing=state.routing_mode,
         model=state.forced_model,
         max_cost_score=state.max_cost_score,
+        session_budget_score=state.session_budget_score,
+        budget_key=state.budget_key,
         no_preplan_cache=not state.preplan_cache,
     )
 
@@ -431,6 +452,14 @@ def _print_banner(state: InteractiveState) -> None:
     table.add_row("Routing", state.routing_mode)
     table.add_row("Forced model", state.forced_model or "none")
     table.add_row("Budget", str(state.max_cost_score) if state.max_cost_score is not None else "none")
+    table.add_row(
+        "Session budget",
+        (
+            f"{state.session_budget_score} ({state.budget_key})"
+            if state.session_budget_score is not None
+            else f"none ({state.budget_key})"
+        ),
+    )
     table.add_row("Pre-plan cache", "on" if state.preplan_cache else "off")
     console.print(table)
 
@@ -461,6 +490,7 @@ def _print_help(compact: bool) -> None:
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
         ("/budget <score|clear>", "Set a Coding Plan max cost score for plan/run."),
+        ("/session-budget <score|clear|reset>", "Set cumulative Coding Plan budget."),
         ("/cache on|off", "Toggle cached scout/summarizer pre-plan findings."),
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/context <task>", "Preview model context without calling a provider."),
@@ -479,6 +509,7 @@ def _print_help(compact: bool) -> None:
         ("/models", "Show configured roles and model profiles."),
         ("/keys", "Show provider key readiness without printing secrets."),
         ("/quota [history|reset]", "Show or manage local quota estimates."),
+        ("/session-budget", "Show current cumulative Coding Plan budget usage."),
         ("/index", "Show local file index status."),
         ("/changed", "Show files changed since index build."),
         ("/sessions", "Show recent local sessions."),
@@ -554,6 +585,8 @@ def _new_session_state(state: InteractiveState) -> None:
     state.routing_mode = _normalize_routing(config.routing_mode)
     state.forced_model = None
     state.max_cost_score = None
+    state.session_budget_score = None
+    state.budget_key = "default"
     state.preplan_cache = True
     state.yes = False
     state.run_tests = True
@@ -575,6 +608,53 @@ def _set_budget(state: InteractiveState, value: str) -> None:
             raise ValueError("budget must be a positive integer or clear")
         state.max_cost_score = budget
     console.print(f"Budget: {state.max_cost_score if state.max_cost_score is not None else 'none'}")
+
+
+def _session_budget(state: InteractiveState, value: str) -> None:
+    parts = value.split()
+    if not parts:
+        budget_command.budget_cmd(
+            workspace=state.workspace_path,
+            key=state.budget_key,
+            max_score=state.session_budget_score,
+            reset=False,
+            yes=False,
+            output_json=False,
+        )
+        console.print(
+            f"Session budget: {state.session_budget_score if state.session_budget_score is not None else 'none'} "
+            f"(key: {state.budget_key})"
+        )
+        return
+    action = parts[0]
+    if action in {"clear", "none", "off"}:
+        state.session_budget_score = None
+        console.print(f"Session budget: none (key: {state.budget_key})")
+        return
+    if action == "key":
+        if len(parts) != 2:
+            raise ValueError("/session-budget key requires a key name")
+        state.budget_key = parts[1]
+        console.print(f"Session budget key: {state.budget_key}")
+        return
+    if action == "reset":
+        budget_command.budget_cmd(
+            workspace=state.workspace_path,
+            key=state.budget_key,
+            max_score=state.session_budget_score,
+            reset=True,
+            yes=state.yes or any(part in {"yes", "--yes", "-y"} for part in parts[1:]),
+            output_json=False,
+        )
+        return
+    try:
+        budget = int(action)
+    except ValueError as exc:
+        raise ValueError("session budget must be a positive integer, clear, key <name>, or reset") from exc
+    if budget <= 0:
+        raise ValueError("session budget must be a positive integer")
+    state.session_budget_score = budget
+    console.print(f"Session budget: {state.session_budget_score} (key: {state.budget_key})")
 
 
 def _parse_on_off(value: str, current: bool) -> bool:

@@ -7,6 +7,7 @@ from rich.console import Console
 
 from helmcode.cli.commands import plan as plan_command
 from helmcode.cli.commands import run as run_command
+from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY
 from helmcode.memory.session_store import SessionStore, SessionTask
 
 console = Console()
@@ -23,6 +24,17 @@ def retry_cmd(
         "--max-cost-score",
         min=1,
         help="Block plan/run before provider calls if selected Coding Plan cost exceeds this value.",
+    ),
+    session_budget_score: int | None = typer.Option(
+        None,
+        "--session-budget-score",
+        min=1,
+        help="Block before provider calls if cumulative Coding Plan selected cost exceeds this budget.",
+    ),
+    budget_key: str = typer.Option(
+        DEFAULT_BUDGET_KEY,
+        "--budget-key",
+        help="Budget ledger key used with --session-budget-score.",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Approve safe confirmations where allowed."),
     no_tests: bool = typer.Option(False, "--no-tests", help="Skip tests for run mode."),
@@ -42,6 +54,8 @@ def retry_cmd(
         routing=routing,
         model=model,
         max_cost_score=max_cost_score,
+        session_budget_score=session_budget_score,
+        budget_key=budget_key,
         yes=yes,
         no_tests=no_tests,
         no_preplan_cache=no_preplan_cache,
@@ -65,6 +79,8 @@ def execute_retry_task(
     routing: str | None,
     model: str | None,
     max_cost_score: int | None,
+    session_budget_score: int | None,
+    budget_key: str,
     yes: bool,
     no_tests: bool,
     no_preplan_cache: bool,
@@ -90,6 +106,8 @@ def execute_retry_task(
             routing=normalized_routing,
             model=model,
             max_cost_score=max_cost_score,
+            session_budget_score=session_budget_score,
+            budget_key=budget_key,
             no_preplan_cache=no_preplan_cache,
         )
         return
@@ -101,6 +119,8 @@ def execute_retry_task(
         routing=normalized_routing,
         model=model,
         max_cost_score=max_cost_score,
+        session_budget_score=session_budget_score,
+        budget_key=budget_key,
         no_preplan_cache=no_preplan_cache,
     )
 

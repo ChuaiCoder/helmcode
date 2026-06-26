@@ -12,6 +12,7 @@ from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.core.constants import MODEL_ROLE_CODING, MODEL_ROLE_PLANNING, MODEL_ROLE_REVIEW
 from helmcode.memory.session_store import SessionStore
+from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY
 from helmcode.models.model_registry import ModelRegistry
 from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
 from helmcode.models.selector import ModelSelector
@@ -29,6 +30,17 @@ def plan_task(
         "--max-cost-score",
         min=1,
         help="Block before provider calls if Coding Plan selected cost score exceeds this value.",
+    ),
+    session_budget_score: int | None = typer.Option(
+        None,
+        "--session-budget-score",
+        min=1,
+        help="Block before provider calls if cumulative Coding Plan selected cost exceeds this budget.",
+    ),
+    budget_key: str = typer.Option(
+        DEFAULT_BUDGET_KEY,
+        "--budget-key",
+        help="Budget ledger key used with --session-budget-score.",
     ),
     no_preplan_cache: bool = typer.Option(
         False,
@@ -79,6 +91,8 @@ def plan_task(
         block_on_allocation=False,
         allocation_include_repair=False,
         max_cost_score=max_cost_score,
+        session_budget_score=session_budget_score,
+        budget_key=budget_key,
         preplan_cache_enabled=not no_preplan_cache,
     )
     result = runner.plan(task)

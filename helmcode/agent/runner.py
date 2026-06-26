@@ -13,6 +13,7 @@ from helmcode.context.context_builder import ContextBuilder
 from helmcode.context.workspace import Workspace
 from helmcode.core.constants import PENDING_PATCH_FILE, SESSION_DIR_NAME
 from helmcode.core.exceptions import ModelError, PermissionDenied
+from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY
 from helmcode.memory.preplan_cache import PreplanCache
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ChatMessage, ModelResponse, ProviderAdapter
@@ -75,6 +76,8 @@ class RunOrchestrator:
         block_on_allocation: bool = True,
         allocation_include_repair: bool = False,
         max_cost_score: int | None = None,
+        session_budget_score: int | None = None,
+        budget_key: str = DEFAULT_BUDGET_KEY,
         preplan_cache_enabled: bool = True,
     ) -> None:
         self.workspace = workspace
@@ -93,6 +96,8 @@ class RunOrchestrator:
         self.block_on_allocation = block_on_allocation
         self.allocation_include_repair = allocation_include_repair
         self.max_cost_score = max_cost_score
+        self.session_budget_score = session_budget_score
+        self.budget_key = budget_key
         self.preplan_cache_enabled = preplan_cache_enabled
 
     def run(self, task: str, confirmed: bool, run_tests: bool = True) -> RunResult:
@@ -399,6 +404,8 @@ class RunOrchestrator:
                 include_repair=self.allocation_include_repair,
                 block_on_required=self.block_on_allocation,
                 max_cost_score=self.max_cost_score,
+                session_budget_score=self.session_budget_score,
+                budget_key=self.budget_key,
             )
         return None
 

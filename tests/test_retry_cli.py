@@ -43,6 +43,8 @@ def test_execute_retry_task_recommend_uses_recommend_route(monkeypatch, tmp_path
         routing="quota",
         model="main:coder",
         max_cost_score=5,
+        session_budget_score=10,
+        budget_key="chat",
         yes=True,
         no_tests=True,
         no_preplan_cache=True,
@@ -77,6 +79,8 @@ def test_execute_retry_task_plan_uses_plan_command(monkeypatch, tmp_path: Path) 
         routing="fixed",
         model=None,
         max_cost_score=None,
+        session_budget_score=10,
+        budget_key="chat",
         yes=False,
         no_tests=False,
         no_preplan_cache=False,
@@ -89,6 +93,8 @@ def test_execute_retry_task_plan_uses_plan_command(monkeypatch, tmp_path: Path) 
             "routing": "fixed",
             "model": None,
             "max_cost_score": None,
+            "session_budget_score": 10,
+            "budget_key": "chat",
             "no_preplan_cache": False,
         }
     ]
