@@ -174,6 +174,26 @@ def test_cost_command_previews_cost(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_savings_command_reports_history(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_savings(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.savings, "savings_cmd", record_savings)
+
+    assert chat.handle_interactive_line("/savings", state) is True
+
+    assert calls == [
+        {
+            "workspace": tmp_path,
+            "limit": None,
+            "output_json": False,
+        }
+    ]
+
+
 def test_tool_command_passes_json_to_tools_cli(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

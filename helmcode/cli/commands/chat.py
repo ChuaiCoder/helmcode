@@ -24,6 +24,7 @@ from helmcode.cli.commands import (
     plan,
     quota,
     run,
+    savings,
     sessions,
     skills,
     tools,
@@ -195,6 +196,13 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             max_cost_score=state.max_cost_score,
             max_file_chars=4_000,
             max_explicit_files=8,
+            output_json=False,
+        )
+        return True
+    if command == "/savings":
+        savings.savings_cmd(
+            workspace=state.workspace_path,
+            limit=None,
             output_json=False,
         )
         return True
@@ -389,6 +397,7 @@ def _print_help(compact: bool) -> None:
         ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/context <task>", "Preview model context without calling a provider."),
         ("/cost <task>", "Preview context, allocation, and quota cost."),
+        ("/savings", "Show historical Coding Plan savings."),
         ("/skills", "List built-in and project skills."),
         ("/skill-match <task>", "Show skills matched for a task."),
         ("/tools", "List local tools."),

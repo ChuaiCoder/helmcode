@@ -265,6 +265,31 @@ class SessionStore:
             for row in rows
         ]
 
+    def list_events_by_type(self, event_type: str, limit: int | None = None) -> list[SessionEvent]:
+        query = """
+            SELECT session_id, event_type, payload, created_at
+            FROM events
+            WHERE event_type = ?
+            ORDER BY id DESC
+        """
+        params: tuple[object, ...]
+        if limit is None:
+            params = (event_type,)
+        else:
+            query += " LIMIT ?"
+            params = (event_type, limit)
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            SessionEvent(
+                session_id=row[0],
+                event_type=row[1],
+                payload=_load_payload(row[2]),
+                created_at=datetime.fromisoformat(row[3]),
+            )
+            for row in rows
+        ]
+
     def stats(self) -> SessionStats:
         with sqlite3.connect(self.db_path) as conn:
             session_count = conn.execute("SELECT COUNT(DISTINCT session_id) FROM events").fetchone()[0]
