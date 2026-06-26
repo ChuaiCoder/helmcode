@@ -4,6 +4,8 @@ import fnmatch
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from helmcode.context.context_builder import estimate_explicit_reference_tokens
+from helmcode.context.workspace import Workspace
 from helmcode.core.config import AgentProfileConfig, HelmcodeConfig
 from helmcode.core.constants import (
     MODEL_ROLE_CODING,
@@ -76,6 +78,7 @@ class AgentAssignment:
     quota_remaining_after: int | None = None
     quota_resets_at: str | None = None
     quota_reservations: list[dict[str, object]] | None = None
+    context_token_estimate: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -95,6 +98,7 @@ class AgentAssignment:
             "quota_remaining_after": self.quota_remaining_after,
             "quota_resets_at": self.quota_resets_at,
             "quota_reservations": self.quota_reservations or [],
+            "context_token_estimate": self.context_token_estimate,
         }
 
 
@@ -245,9 +249,15 @@ DEFAULT_AGENT_PROFILES = [
 
 
 class CodingPlanTaskAllocator:
-    def __init__(self, config: HelmcodeConfig, selector: QuotaAwareSelector) -> None:
+    def __init__(
+        self,
+        config: HelmcodeConfig,
+        selector: QuotaAwareSelector,
+        workspace: Workspace | None = None,
+    ) -> None:
         self.config = config
         self.selector = selector
+        self.workspace = workspace
         self.role_selector = ModelSelector(config.model_roles)
         self.agent_profiles = _merge_agent_profiles(config.agent_profiles)
         self.model_profile_costs = {
@@ -255,6 +265,7 @@ class CodingPlanTaskAllocator:
             for profile in config.model_profiles
         }
         self.model_profile_tiers = {profile.id: profile.cost_tier for profile in config.model_profiles}
+        self.explicit_context_token_estimate = 0
 
     def allocate(
         self,
@@ -266,6 +277,7 @@ class CodingPlanTaskAllocator:
     ) -> TaskAllocation:
         detected_task_type = classify_task(task)
         complexity = classify_complexity(task)
+        self.explicit_context_token_estimate = self._explicit_context_tokens(task)
         agent_ids = self._agent_ids_for_task(
             task=task,
             detected_task_type=detected_task_type,
@@ -466,6 +478,7 @@ class CodingPlanTaskAllocator:
             ),
             quota_resets_at=str(primary_quota["resets_at"]) if primary_quota and primary_quota["resets_at"] else None,
             quota_reservations=quota_reservations,
+            context_token_estimate=self._context_token_estimate_for(agent),
         )
 
     def _apply_budget_cap(
@@ -586,7 +599,7 @@ class CodingPlanTaskAllocator:
 
     def _reservation_amount_for_unit(self, agent: AgentProfile, unit: str) -> int:
         if unit == "token":
-            return max(agent.estimated_tokens, 1)
+            return max(agent.estimated_tokens + self._context_token_estimate_for(agent), 1)
         return 1
 
     def _baseline_model(self) -> str | None:
@@ -651,6 +664,7 @@ class CodingPlanTaskAllocator:
                     "reserved_amount": reserved_amount,
                     "remaining": remaining,
                     "remaining_after": _remaining_after_reservation(remaining, reserved_amount),
+                    "context_token_estimate": self._context_token_estimate_for(agent),
                     "resets_at": (
                         policy_status.next_restore_at.isoformat()
                         if policy_status.next_restore_at
@@ -659,6 +673,16 @@ class CodingPlanTaskAllocator:
                 }
             )
         return details
+
+    def _explicit_context_tokens(self, task: str) -> int:
+        if self.workspace is None:
+            return 0
+        return estimate_explicit_reference_tokens(self.workspace, task)
+
+    def _context_token_estimate_for(self, agent: AgentProfile) -> int:
+        if agent.task_type == TASK_REVIEW:
+            return 0
+        return self.explicit_context_token_estimate
 
     def _strategy(self, task_type: str, complexity: str) -> str:
         if task_type in {TASK_REPO_SCAN, TASK_SUMMARIZE, TASK_REVIEW}:

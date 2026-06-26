@@ -100,6 +100,30 @@ def test_quota_text_shows_token_reservation_amount() -> None:
     )
 
 
+def test_quota_text_shows_context_token_estimate() -> None:
+    assignment = AgentAssignment(
+        agent_id="planner",
+        role="planning",
+        task_type="plan",
+        purpose="plan",
+        model_id="main:planner",
+        reason="selected for plan",
+        required=True,
+        estimated_cost_score=2,
+        quota_policy_id="planning_tokens",
+        quota_unit="token",
+        quota_reserved_amount=2_600,
+        quota_remaining=3_000,
+        quota_remaining_after=400,
+        context_token_estimate=100,
+    )
+
+    assert agents._quota_text(assignment) == (
+        "planning_tokens: 3000 left, reserves 2600 token, "
+        "includes 100 context token, 400 after allocation"
+    )
+
+
 def test_quota_text_shows_multiple_reservations() -> None:
     assignment = AgentAssignment(
         agent_id="planner",

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from helmcode.context.context_builder import ContextBuilder
+from helmcode.context.context_builder import ContextBuilder, estimate_explicit_reference_tokens
 from helmcode.context.workspace import Workspace
 from helmcode.memory.skill_store import SkillStore
 
@@ -54,3 +54,42 @@ def test_context_builder_injects_matching_project_skill(tmp_path: Path) -> None:
     assert "Matched skills:" in built.text
     assert "### api-review" in built.text
     assert "Check backward compatibility" in built.text
+
+
+def test_context_builder_includes_explicit_file_references_once(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("project overview\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("extra implementation notes\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+
+    built = ContextBuilder(workspace).build_for_task("explain @README.md and @notes.txt")
+
+    assert "Explicit @ references:" in built.text
+    assert "--- README.md ---" in built.text
+    assert "project overview" in built.text
+    assert "--- notes.txt ---" in built.text
+    assert built.text.count("--- README.md ---") == 1
+    assert built.files_considered[:2] == ["README.md", "notes.txt"]
+    assert built.explicit_references == ["README.md", "notes.txt"]
+
+
+def test_context_builder_warns_for_invalid_explicit_references(tmp_path: Path) -> None:
+    (tmp_path / ".env").write_text("TOKEN=secret\n", encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+
+    built = ContextBuilder(workspace).build_for_task("inspect @../outside.txt @.env @missing.py")
+
+    assert "Context reference warnings:" in built.text
+    assert "Skipped @../outside.txt: outside workspace" in built.text
+    assert "Skipped @.env: sensitive path pattern" in built.text
+    assert "Skipped @missing.py: file not found" in built.text
+    assert "TOKEN=secret" not in built.text
+    assert built.explicit_references == []
+
+
+def test_estimate_explicit_reference_tokens_counts_text_refs(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("a" * 120, encoding="utf-8")
+    workspace = Workspace.discover(tmp_path)
+
+    estimate = estimate_explicit_reference_tokens(workspace, "summarize @README.md")
+
+    assert estimate == 30

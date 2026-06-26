@@ -122,6 +122,7 @@ helmcode setup
 helmcode run "help me add tests for the auth module"
 helmcode run --max-cost-score 8 "help me add tests for the auth module"
 helmcode run --no-preplan-cache "help me add tests for the auth module"
+helmcode plan "explain the routing flow in @helmcode/models/quota.py"
 helmcode plan "explain this repository architecture"
 helmcode models recommend "help me add tests for the auth module"
 helmcode models status
@@ -209,6 +210,20 @@ the required planner/coder path still exceeds the cap, the runtime records the
 allocation and blocks before any provider call. In interactive sessions,
 `/budget <n>` applies the same cap to `/agents`, `/plan`, `/run`, and bare
 prompts.
+
+Use `@relative/path` in a task to force specific local files into the model
+context:
+
+```bash
+helmcode plan "explain quota routing in @helmcode/models/quota.py"
+helmcode run "add tests for @helmcode/context/context_builder.py"
+```
+
+References must stay inside the workspace and must be text-like, non-sensitive
+files. Skipped references are reported in the generated context. For token quota
+policies, Coding Plan allocation adds an explicit context token estimate to the
+affected scout, summarizer, planner, coder, and repair reservations, so
+`helmcode agents plan` previews the extra quota cost before provider calls.
 
 `helmcode init` creates a repo-scoped `AGENTS.md` with detected languages,
 frameworks, test commands, and local agent workflow guidance. It refuses to

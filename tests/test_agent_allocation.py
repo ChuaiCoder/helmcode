@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from helmcode.agent.allocation import CodingPlanTaskAllocator
+from helmcode.context.workspace import Workspace
 from helmcode.core.config import (
     AgentProfileConfig,
     HelmcodeConfig,
@@ -267,6 +268,33 @@ def test_token_quota_reserves_estimated_agent_tokens(tmp_path: Path) -> None:
     assert planner.quota_remaining_after == 500
 
 
+def test_explicit_context_reference_increases_token_reservation(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("a" * 400, encoding="utf-8")
+    config = _config()
+    config.quota_policies = [
+        QuotaPolicyConfig(
+            id="planning_tokens",
+            model_patterns=["main:planner"],
+            unit="token",
+            windows=[QuotaWindowConfig(name="rolling", type="rolling", duration_seconds=300, limit=3_000)],
+        )
+    ]
+    ledger = QuotaLedger(tmp_path / "quota.jsonl")
+    allocator = CodingPlanTaskAllocator(
+        config,
+        QuotaAwareSelector(config, ledger),
+        workspace=Workspace.discover(tmp_path),
+    )
+
+    allocation = allocator.allocate("plan repository architecture using @README.md")
+
+    planner = next(assignment for assignment in allocation.assignments if assignment.agent_id == "planner")
+    assert planner.context_token_estimate == 100
+    assert planner.quota_reserved_amount == 2_600
+    assert planner.quota_remaining_after == 400
+    assert planner.quota_reservations[0]["context_token_estimate"] == 100
+
+
 def test_allocation_reserves_request_and_token_quota_for_same_agent(tmp_path: Path) -> None:
     config = _config()
     config.quota_policies = [
@@ -294,6 +322,7 @@ def test_allocation_reserves_request_and_token_quota_for_same_agent(tmp_path: Pa
             "reserved_amount": 1,
             "remaining": 2,
             "remaining_after": 1,
+            "context_token_estimate": 0,
             "resets_at": None,
         },
         {
@@ -302,6 +331,7 @@ def test_allocation_reserves_request_and_token_quota_for_same_agent(tmp_path: Pa
             "reserved_amount": 2_500,
             "remaining": 3_000,
             "remaining_after": 500,
+            "context_token_estimate": 0,
             "resets_at": None,
         },
     ]

@@ -39,7 +39,11 @@ class AgentRuntime:
     ) -> TaskAllocation | None:
         if self.selector is None:
             return None
-        allocation = CodingPlanTaskAllocator(self.selector.config, self.selector).allocate(
+        allocation = CodingPlanTaskAllocator(
+            self.selector.config,
+            self.selector,
+            workspace=self.workspace,
+        ).allocate(
             task,
             override_model_id=self.override_model_id,
             include_repair=include_repair,

@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from helmcode.agent.allocation import AgentAssignment, CodingPlanTaskAllocator, TaskAllocation
+from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
 
@@ -92,7 +93,7 @@ def build_allocation(
         QuotaLedger.for_workspace(workspace.resolve()),
         routing_mode=routing_mode,
     )
-    allocator = CodingPlanTaskAllocator(config, selector)
+    allocator = CodingPlanTaskAllocator(config, selector, workspace=Workspace.discover(workspace.resolve()))
     return allocator.allocate(
         task,
         override_model_id=model,
@@ -175,6 +176,8 @@ def _quota_text(assignment: AgentAssignment) -> str:
     if assignment.quota_reserved_amount != 1:
         unit = assignment.quota_unit or "unit"
         text += f", reserves {assignment.quota_reserved_amount} {unit}"
+    if assignment.context_token_estimate and assignment.quota_unit == "token":
+        text += f", includes {assignment.context_token_estimate} context token"
     if assignment.quota_remaining_after is not None:
         text += f", {assignment.quota_remaining_after} after allocation"
     if assignment.quota_resets_at:
@@ -188,6 +191,7 @@ def _quota_reservation_text(reservation: dict[str, object]) -> str:
     remaining = reservation.get("remaining")
     reserved_amount = int(reservation.get("reserved_amount") or 1)
     remaining_after = reservation.get("remaining_after")
+    context_token_estimate = int(reservation.get("context_token_estimate") or 0)
     resets_at = reservation.get("resets_at")
     if remaining is None:
         text = f"{policy_id}/{unit}"
@@ -195,6 +199,8 @@ def _quota_reservation_text(reservation: dict[str, object]) -> str:
         text = f"{policy_id}/{unit}: {remaining} left"
     if reserved_amount != 1:
         text += f", reserves {reserved_amount} {unit}"
+    if context_token_estimate and unit == "token":
+        text += f", includes {context_token_estimate} context token"
     if remaining_after is not None:
         text += f", {remaining_after} after allocation"
     if resets_at:
