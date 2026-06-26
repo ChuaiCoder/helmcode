@@ -13,6 +13,7 @@ from helmcode.cli.commands import (
     budget,
     checkpoints,
     chat,
+    commit,
     compact,
     config,
     context,
@@ -72,6 +73,7 @@ app.command("plan")(plan.plan_task)
 app.command("retry")(retry.retry_cmd)
 app.command("chat")(chat.chat_cmd)
 app.command("code")(chat.chat_cmd)
+app.command("commit")(commit.commit_cmd)
 app.command("compact")(compact.compact_cmd)
 app.command("context")(context.context_cmd)
 app.command("cost")(cost.cost_cmd)

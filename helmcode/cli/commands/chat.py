@@ -15,6 +15,7 @@ from helmcode.cli.commands import (
     budget as budget_command,
     checkpoints,
     config as config_command,
+    commit as commit_command,
     compact,
     context,
     cost,
@@ -339,6 +340,16 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/apply":
         apply.apply_last_patch(workspace=state.workspace_path, yes=state.yes)
         return True
+    if command == "/commit":
+        commit_command.commit_cmd(
+            message=rest or None,
+            workspace=state.workspace_path,
+            pathspecs=[],
+            dry_run=False,
+            yes=state.yes,
+            output_json=False,
+        )
+        return True
     if command == "/mode":
         _set_mode(state, rest)
         return True
@@ -523,6 +534,7 @@ def _print_help(compact: bool) -> None:
         ("/status", "Show workspace, mode, routing, and quota."),
         ("/diff", "Show pending patch."),
         ("/apply", "Apply pending patch."),
+        ("/commit [message]", "Create a local git commit from current changes."),
         ("/doctor", "Run local diagnostics."),
         ("/init", "Create AGENTS.md project instructions."),
         ("/setup", "Show setup command hint."),

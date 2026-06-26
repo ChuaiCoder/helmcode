@@ -294,6 +294,29 @@ def test_keys_command_shows_provider_status(monkeypatch, tmp_path: Path) -> None
     ]
 
 
+def test_commit_command_creates_local_commit(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path, yes=True)
+    calls: list[dict[str, object]] = []
+
+    def record_commit(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.commit_command, "commit_cmd", record_commit)
+
+    assert chat.handle_interactive_line("/commit Update docs", state) is True
+
+    assert calls == [
+        {
+            "message": "Update docs",
+            "workspace": tmp_path,
+            "pathspecs": [],
+            "dry_run": False,
+            "yes": True,
+            "output_json": False,
+        }
+    ]
+
+
 def test_savings_command_reports_history(monkeypatch, tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
     calls: list[dict[str, object]] = []

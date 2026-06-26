@@ -165,6 +165,8 @@ helmcode sessions diff <left-session-id> <right-session-id>
 helmcode prune-sessions --keep 20
 helmcode diff
 helmcode apply
+helmcode commit --dry-run
+helmcode commit "Update routing controls" --yes
 helmcode doctor
 helmcode doctor --probe-models
 helmcode keys
@@ -225,6 +227,7 @@ commands to control the session:
 /status                       show workspace and routing status
 /diff                         show pending patch
 /apply                        apply pending patch
+/commit [message]             create a local git commit from current changes
 /doctor                       run local diagnostics
 /init                         create AGENTS.md project instructions
 /exit                         leave the session
@@ -313,6 +316,12 @@ non-ignored workspace files under `.helmcode/checkpoints`. Use
 `helmcode checkpoint restore <id> --dry-run` to preview a restore and
 `helmcode restore <id> --yes` to restore captured files. Checkpoints skip paths
 that look like secrets, such as `.env`, credentials, tokens, and private keys.
+
+`helmcode commit` is a Reasonix-style local commit helper. It previews changed
+files, generates a deterministic short message when one is not supplied, stages
+the selected paths, and creates a git commit after confirmation. Use
+`--dry-run` to inspect without staging or committing, `--path <file>` to limit
+the commit scope, and `--yes` for non-interactive use.
 
 `helmcode index build` refreshes the local file index stored under
 `.helmcode/file_index.json`. `helmcode index changed` reports files that changed
