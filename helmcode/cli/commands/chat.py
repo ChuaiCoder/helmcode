@@ -296,6 +296,11 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
         return True
     if command == "/routes":
         _require_task(rest, "/routes")
+        compare_presets = False
+        if rest.startswith("--compare-presets "):
+            compare_presets = True
+            rest = rest[len("--compare-presets ") :].strip()
+            _require_task(rest, "/routes --compare-presets")
         preset = _consume_model_preset(state)
         routes.routes_cmd(
             task=rest,
@@ -305,6 +310,22 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
             role_model=_role_model_args(state),
             include_repair=False,
             max_cost_score=state.max_cost_score,
+            compare_presets=compare_presets,
+            output_json=False,
+        )
+        return True
+    if command == "/preset-routes":
+        _require_task(rest, "/preset-routes")
+        preset = _consume_model_preset(state)
+        routes.routes_cmd(
+            task=rest,
+            workspace=state.workspace_path,
+            model=state.forced_model,
+            preset=preset,
+            role_model=_role_model_args(state),
+            include_repair=False,
+            max_cost_score=state.max_cost_score,
+            compare_presets=True,
             output_json=False,
         )
         return True
@@ -575,6 +596,7 @@ def _print_help(compact: bool) -> None:
         ("/context <task>", "Preview model context without calling a provider."),
         ("/cost <task>", "Preview context, allocation, and quota cost."),
         ("/routes <task>", "Compare fixed/quota/forced Coding Plan routes."),
+        ("/preset-routes <task>", "Compare auto/economy/balanced/pro routes."),
         ("/savings", "Show historical Coding Plan savings."),
         ("/allocations [session]", "Show Coding Plan allocation history."),
         ("/skills", "List built-in and project skills."),

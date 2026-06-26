@@ -283,6 +283,63 @@ def test_routes_command_compares_current_session_routing(monkeypatch, tmp_path: 
             "role_model": [],
             "include_repair": False,
             "max_cost_score": 7,
+            "compare_presets": False,
+            "output_json": False,
+        }
+    ]
+
+
+def test_preset_routes_command_compares_presets(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(
+        workspace_path=tmp_path,
+        forced_model="main:coder",
+        max_cost_score=7,
+    )
+    calls: list[dict[str, object]] = []
+
+    def record_routes(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.routes, "routes_cmd", record_routes)
+
+    assert chat.handle_interactive_line("/preset-routes add tests", state) is True
+
+    assert calls == [
+        {
+            "task": "add tests",
+            "workspace": tmp_path,
+            "model": "main:coder",
+            "preset": "balanced",
+            "role_model": [],
+            "include_repair": False,
+            "max_cost_score": 7,
+            "compare_presets": True,
+            "output_json": False,
+        }
+    ]
+
+
+def test_routes_command_parses_compare_presets_flag(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def record_routes(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(chat.routes, "routes_cmd", record_routes)
+
+    assert chat.handle_interactive_line("/routes --compare-presets add tests", state) is True
+
+    assert calls == [
+        {
+            "task": "add tests",
+            "workspace": tmp_path,
+            "model": None,
+            "preset": "balanced",
+            "role_model": [],
+            "include_repair": False,
+            "max_cost_score": None,
+            "compare_presets": True,
             "output_json": False,
         }
     ]

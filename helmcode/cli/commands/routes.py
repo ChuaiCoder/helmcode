@@ -12,8 +12,21 @@ from helmcode.agent.allocation import TaskAllocation
 from helmcode.cli.commands import agents as agents_command
 from helmcode.cli.model_overrides import parse_model_overrides
 from helmcode.context.workspace import Workspace
+from helmcode.models.quota import (
+    MODEL_PRESET_AUTO,
+    MODEL_PRESET_BALANCED,
+    MODEL_PRESET_ECONOMY,
+    MODEL_PRESET_PRO,
+    normalize_model_preset,
+)
 
 console = Console()
+PRESET_COMPARISON = [
+    MODEL_PRESET_AUTO,
+    MODEL_PRESET_ECONOMY,
+    MODEL_PRESET_BALANCED,
+    MODEL_PRESET_PRO,
+]
 
 
 def routes_cmd(
@@ -41,6 +54,11 @@ def routes_cmd(
         min=1,
         help="Show whether each route exceeds this Coding Plan budget.",
     ),
+    compare_presets: bool = typer.Option(
+        False,
+        "--compare-presets",
+        help="Compare quota routes for auto, economy, balanced, and pro.",
+    ),
     output_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
     """Compare fixed, quota-aware, and optional forced-model Coding Plan routes."""
@@ -52,6 +70,7 @@ def routes_cmd(
         model_overrides=parse_model_overrides(role_model),
         include_repair=include_repair,
         max_cost_score=max_cost_score,
+        compare_presets=compare_presets,
     )
     if output_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -68,27 +87,35 @@ def build_routes_report(
     model_overrides: dict[str, str] | None = None,
     include_repair: bool = False,
     max_cost_score: int | None = None,
+    compare_presets: bool = False,
 ) -> dict[str, Any]:
     workspace_info = Workspace.discover(workspace)
-    route_specs: list[tuple[str, str, str | None]] = [
-        ("fixed", "fixed", None),
-        ("quota", "quota", None),
+    requested_preset = normalize_model_preset(model_preset)
+    route_specs: list[tuple[str, str, str | None, str]] = [
+        ("fixed", "fixed", None, requested_preset),
     ]
+    if compare_presets:
+        route_specs.extend(
+            (f"quota:{preset}", "quota", None, preset)
+            for preset in PRESET_COMPARISON
+        )
+    else:
+        route_specs.append(("quota", "quota", None, requested_preset))
     if model:
-        route_specs.append(("forced", "quota", model))
+        route_specs.append(("forced", "quota", model, requested_preset))
     routes = [
         _route_payload(
             label=label,
             routing=routing,
             model=route_model,
-            model_preset=model_preset,
+            model_preset=route_preset,
             model_overrides=model_overrides,
             task=task,
             workspace=workspace_info.root_path,
             include_repair=include_repair,
             max_cost_score=max_cost_score,
         )
-        for label, routing, route_model in route_specs
+        for label, routing, route_model, route_preset in route_specs
     ]
     fixed_cost = _selected_cost(_find_route(routes, "fixed"))
     for route in routes:
@@ -110,7 +137,9 @@ def build_routes_report(
         "include_repair": include_repair,
         "max_cost_score": max_cost_score,
         "forced_model": model,
-        "model_preset": model_preset or "balanced",
+        "model_preset": requested_preset,
+        "compare_presets": compare_presets,
+        "presets_compared": PRESET_COMPARISON if compare_presets else [],
         "model_overrides": model_overrides or {},
         "best_route": best["route"] if best else None,
         "routes": routes,
@@ -275,4 +304,6 @@ def _optional_int(value: object) -> str:
 
 
 def _route_priority(route: str) -> int:
-    return {"quota": 0, "fixed": 1, "forced": 2}.get(route, 99)
+    if route == "quota" or route.startswith("quota:"):
+        return 0
+    return {"fixed": 1, "forced": 2}.get(route, 99)

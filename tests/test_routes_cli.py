@@ -49,6 +49,39 @@ def test_routes_command_exposes_auto_effective_preset(tmp_path: Path) -> None:
     assert quota_route["summary"]["effective_model_preset"] == "pro"
 
 
+def test_routes_command_compares_all_presets_json(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "routes",
+            "refactor the whole project architecture and implement a large routing change",
+            "--workspace",
+            str(tmp_path),
+            "--compare-presets",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["compare_presets"] is True
+    assert payload["presets_compared"] == ["auto", "economy", "balanced", "pro"]
+    assert [route["route"] for route in payload["routes"]] == [
+        "fixed",
+        "quota:auto",
+        "quota:economy",
+        "quota:balanced",
+        "quota:pro",
+    ]
+    routes = {route["route"]: route for route in payload["routes"]}
+    assert routes["quota:auto"]["model_preset"] == "auto"
+    assert routes["quota:auto"]["effective_model_preset"] == "pro"
+    assert routes["quota:economy"]["summary"]["model_preset"] == "economy"
+    assert routes["quota:balanced"]["summary"]["effective_model_preset"] == "balanced"
+    assert routes["quota:pro"]["summary"]["effective_model_preset"] == "pro"
+    assert payload["best_route"] in routes
+
+
 def test_routes_command_includes_forced_model_route(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app,

@@ -131,6 +131,7 @@ helmcode plan "explain the routing flow in @helmcode/models/quota.py"
 helmcode context "explain the routing flow in @helmcode/models/quota.py"
 helmcode cost "explain the routing flow in @helmcode/models/quota.py"
 helmcode routes "refactor the routing layer and add tests"
+helmcode routes --compare-presets "refactor the routing layer and add tests"
 helmcode retry --mode plan
 helmcode budget --max-score 20
 helmcode budget --key chat --reset --yes
@@ -223,6 +224,7 @@ commands to control the session:
 /context <task>               preview model context without calling a provider
 /cost <task>                  preview context, allocation, and quota cost
 /routes <task>                compare fixed/quota/forced Coding Plan routes
+/preset-routes <task>         compare auto/economy/balanced/pro routes
 /savings                      show historical Coding Plan savings
 /allocations [session]        show Coding Plan allocation history
 /plans [session]              alias for allocation history
@@ -308,6 +310,10 @@ reservations so you can compare routes before spending provider quota.
 `helmcode routes <task>` compares fixed role routing, quota-aware routing, and
 an optional forced-model route side by side, including selected cost, savings
 versus fixed routing, budget state, and each agent-to-model assignment.
+Pass `--compare-presets` to expand the quota side into `auto`, `economy`,
+`balanced`, and `pro` routes in one local report. Interactive sessions expose
+the same comparison through `/preset-routes <task>` or
+`/routes --compare-presets <task>`.
 `helmcode retry [session]` reuses the latest recorded user task, or the latest
 task from a selected session, and sends it through `recommend`, `plan`, or
 `run` mode with the current routing options. This keeps recovery from a failed
