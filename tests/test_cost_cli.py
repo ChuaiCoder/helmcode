@@ -25,6 +25,27 @@ def test_cost_command_outputs_context_and_allocation_json(tmp_path: Path) -> Non
     assert payload["allocation"]["task"] == "plan @README.md"
 
 
+def test_cost_command_exposes_auto_effective_preset(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "cost",
+            "refactor the whole project architecture and implement a large routing change",
+            "--workspace",
+            str(tmp_path),
+            "--preset",
+            "auto",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["model_preset"] == "auto"
+    assert payload["summary"]["effective_model_preset"] == "pro"
+    assert payload["allocation"]["effective_model_preset"] == "pro"
+
+
 def test_cost_command_reports_budget_exceeded(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app,

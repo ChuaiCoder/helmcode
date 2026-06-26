@@ -20,6 +20,7 @@ from helmcode.models.quota import (
     QuotaLedger,
     QuotaState,
     classify_task,
+    normalize_model_preset,
 )
 
 
@@ -152,6 +153,36 @@ def test_economy_preset_avoids_high_cost_profile_when_cheaper_exists(tmp_path: P
 
     assert selection.model_id == "main:cheap-code"
     assert "using economy preset" in selection.reason
+
+
+def test_normalize_model_preset_accepts_auto() -> None:
+    assert normalize_model_preset("auto") == "auto"
+
+
+def test_direct_auto_selector_behaves_like_balanced_without_complexity_context(tmp_path: Path) -> None:
+    config = _config(
+        roles={"default": "main:fast", "coding": "main:strong"},
+        profiles=[
+            ModelProfileConfig(id="main:strong", preferred_for=[TASK_CODE_PATCH], cost_tier="high"),
+            ModelProfileConfig(id="main:cheap-code", preferred_for=[TASK_CODE_PATCH], cost_tier="low"),
+        ],
+    )
+    selector = QuotaAwareSelector(
+        config,
+        QuotaLedger(tmp_path / "quota.jsonl"),
+        routing_mode="quota",
+        model_preset="auto",
+    )
+
+    selection = selector.select(
+        role="coding",
+        task_type=TASK_CODE_PATCH,
+        task="implement feature",
+        fallback_model_id="main:strong",
+    )
+
+    assert selection.model_id == "main:cheap-code"
+    assert "using auto preset" not in selection.reason
 
 
 def test_quota_selection_uses_next_lowest_cost_profile_when_cheapest_is_exhausted(

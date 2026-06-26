@@ -26,6 +26,29 @@ def test_routes_command_compares_fixed_and_quota_json(tmp_path: Path) -> None:
     assert payload["best_route"] == "quota"
 
 
+def test_routes_command_exposes_auto_effective_preset(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "routes",
+            "refactor the whole project architecture and implement a large routing change",
+            "--workspace",
+            str(tmp_path),
+            "--preset",
+            "auto",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    quota_route = next(route for route in payload["routes"] if route["route"] == "quota")
+    assert payload["model_preset"] == "auto"
+    assert quota_route["model_preset"] == "auto"
+    assert quota_route["effective_model_preset"] == "pro"
+    assert quota_route["summary"]["effective_model_preset"] == "pro"
+
+
 def test_routes_command_includes_forced_model_route(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app,

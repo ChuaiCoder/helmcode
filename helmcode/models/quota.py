@@ -28,10 +28,11 @@ ROLE_TASK_TYPES = {
 }
 
 COST_ORDER = {"low": 0, "medium": 1, "high": 2}
+MODEL_PRESET_AUTO = "auto"
 MODEL_PRESET_BALANCED = "balanced"
 MODEL_PRESET_ECONOMY = "economy"
 MODEL_PRESET_PRO = "pro"
-MODEL_PRESETS = {MODEL_PRESET_BALANCED, MODEL_PRESET_ECONOMY, MODEL_PRESET_PRO}
+MODEL_PRESETS = {MODEL_PRESET_AUTO, MODEL_PRESET_BALANCED, MODEL_PRESET_ECONOMY, MODEL_PRESET_PRO}
 LEDGER_FILE = "quota_ledger.jsonl"
 
 
@@ -399,7 +400,7 @@ class QuotaAwareSelector:
             status = quota_state.status_for_model(model_id)
             if status.available:
                 reason = f"selected for {task_type}"
-                if self.model_preset != MODEL_PRESET_BALANCED:
+                if self.model_preset not in {MODEL_PRESET_BALANCED, MODEL_PRESET_AUTO}:
                     reason += f" using {self.model_preset} preset"
                 if status.policy_id:
                     reason += f"; quota policies {status.policy_id} have capacity"

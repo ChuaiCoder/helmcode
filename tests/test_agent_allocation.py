@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from helmcode.agent.allocation import CodingPlanTaskAllocator
+from helmcode.agent.runtime import AgentRuntime
+from helmcode.agent.session import AgentSession
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import (
     AgentProfileConfig,
@@ -159,6 +162,93 @@ def test_pro_preset_allocation_prefers_high_capability_profile(tmp_path: Path) -
     ]
     coder = next(assignment for assignment in allocation.assignments if assignment.agent_id == "coder")
     assert "using pro preset" in coder.reason
+
+
+def test_auto_preset_low_complexity_uses_balanced_route(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:cheap-coder",
+            labels=["coding", "cheap"],
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+
+    allocation = _allocator_with_preset(config, tmp_path, "auto").allocate("add a small helper")
+
+    assert allocation.model_preset == "auto"
+    assert allocation.effective_model_preset == "balanced"
+    assert [assignment.model_id for assignment in allocation.assignments] == [
+        "main:planner",
+        "main:cheap-coder",
+    ]
+
+
+def test_auto_preset_complex_task_uses_pro_route(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:cheap-coder",
+            labels=["coding", "cheap"],
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+
+    allocation = _allocator_with_preset(config, tmp_path, "auto").allocate(
+        "refactor the whole project architecture and implement a large routing change"
+    )
+
+    assert allocation.model_preset == "auto"
+    assert allocation.effective_model_preset == "pro"
+    coder = next(assignment for assignment in allocation.assignments if assignment.agent_id == "coder")
+    assert coder.model_id == "main:coder"
+    assert "using pro preset" in coder.reason
+
+
+def test_runtime_auto_preset_reuses_allocation_effective_preset(tmp_path: Path) -> None:
+    config = _config()
+    config.model_profiles.append(
+        ModelProfileConfig(
+            id="main:cheap-coder",
+            labels=["coding", "cheap"],
+            preferred_for=["code_patch"],
+            cost_tier="low",
+        )
+    )
+    selector = QuotaAwareSelector(
+        config,
+        QuotaLedger(tmp_path / "quota.jsonl"),
+        model_preset="auto",
+    )
+    runtime = AgentRuntime(
+        workspace=Workspace.discover(tmp_path),
+        selector=selector,
+    )
+    task = "refactor the whole project architecture and implement a large routing change"
+    session = AgentSession(
+        session_id="test-session",
+        workspace_path=tmp_path,
+        user_task=task,
+        created_at=datetime.now(UTC),
+    )
+
+    allocation = runtime.allocate_task(session=session, task=task)
+    selection = runtime.select_model(
+        session=session,
+        role="coding",
+        task_type="code_patch",
+        task=task,
+        fallback_model_id="main:coder",
+        agent_id="coder",
+    )
+
+    assert allocation is not None
+    assert allocation.effective_model_preset == "pro"
+    assert selection.model_id == "main:coder"
+    assert "using pro preset" in selection.reason
+    assert selector.model_preset == "auto"
 
 
 def test_scoped_model_override_changes_only_matching_agent(tmp_path: Path) -> None:
@@ -617,6 +707,8 @@ def test_allocation_to_dict_exposes_runtime_contract(tmp_path: Path) -> None:
     payload = allocation.to_dict()
 
     assert payload["task"] == "add a small helper"
+    assert payload["model_preset"] == "balanced"
+    assert payload["effective_model_preset"] == "balanced"
     assert payload["blocked"] is False
     assert payload["max_cost_score"] == 3
     assert payload["budget_exceeded"] is True

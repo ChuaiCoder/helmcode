@@ -121,6 +121,7 @@ helmcode init
 helmcode setup
 helmcode run "help me add tests for the auth module"
 helmcode run --max-cost-score 8 "help me add tests for the auth module"
+helmcode run --preset auto "refactor the routing layer"
 helmcode run --preset economy "inspect a small formatting change"
 helmcode run --preset pro "refactor the routing layer"
 helmcode run --role-model coder=main_pool:your-pro-coding-model "implement a risky patch"
@@ -209,7 +210,7 @@ commands to control the session:
 /clear                        clear the screen and redraw session status
 /mode recommend|plan|run      set what bare prompt text does
 /routing fixed|quota|recommend set model routing for the session
-/preset economy|balanced|pro  set the Coding Plan model preset
+/preset auto|economy|balanced|pro set the Coding Plan model preset
 /pro [off|task]               use pro preset for the next task or this task
 /model <provider:model|clear> force or clear a model override
 /role-model <key=model|clear> override one Coding Plan role or agent model
@@ -465,16 +466,21 @@ mapping directly. This is the main Coding Plan quota-saving behavior: cheap
 models can handle scan, summarize, planning, or simple coding phases before the
 configured expensive coding model is spent.
 
-Use `--preset economy|balanced|pro` to switch the model package for a single
-command without editing config. `balanced` is the default quota-saving behavior:
-pick the cheapest profiled model that can handle each agent task. `economy`
-avoids high-cost profiled models when a low or medium candidate exists, while
-still falling back to configured role/default models if that is the only safe
-path. `pro` reverses the task-profile order and spends higher-cost profiled
-models first, subject to the same local quota checks. Interactive sessions expose
-the same control through `/preset`. Use `/pro` to arm the pro preset for only
-the next task, `/pro off` to clear it, or `/pro <task>` to run one immediate task
-with pro while keeping the long-lived session preset unchanged.
+Use `--preset auto|economy|balanced|pro` to switch the model package for a
+single command without editing config. `balanced` is the default quota-saving
+behavior: pick the cheapest profiled model that can handle each agent task.
+`auto` is the Reasonix-style adaptive preset for Coding Plan: low-complexity
+tasks resolve to balanced, while medium and high complexity tasks resolve to
+pro before any provider call. Allocation JSON exposes both `model_preset` and
+`effective_model_preset`, so tools can show whether `auto` actually spent the
+stronger route. `economy` avoids high-cost profiled models when a low or medium
+candidate exists, while still falling back to configured role/default models if
+that is the only safe path. `pro` reverses the task-profile order and spends
+higher-cost profiled models first, subject to the same local quota checks.
+Interactive sessions expose the same control through `/preset`. Use `/pro` to
+arm the pro preset for only the next task, `/pro off` to clear it, or
+`/pro <task>` to run one immediate task with pro while keeping the long-lived
+session preset unchanged.
 
 Use `--role-model KEY=provider:model` when you want a Reasonix-style temporary
 model override without collapsing every phase onto one expensive model. Keys can

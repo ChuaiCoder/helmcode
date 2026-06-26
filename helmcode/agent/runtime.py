@@ -9,7 +9,7 @@ from helmcode.core.exceptions import ModelError
 from helmcode.memory.coding_plan_budget import DEFAULT_BUDGET_KEY, CodingPlanBudgetLedger
 from helmcode.memory.session_store import SessionStore
 from helmcode.models.provider import ModelResponse, ProviderAdapter
-from helmcode.models.quota import ModelSelection, QuotaAwareSelector
+from helmcode.models.quota import MODEL_PRESET_AUTO, ModelSelection, QuotaAwareSelector
 
 
 class AgentRuntime:
@@ -30,6 +30,7 @@ class AgentRuntime:
         self.session_store = session_store
         self.override_model_id = override_model_id
         self.model_overrides = {key.lower(): value for key, value in (model_overrides or {}).items()}
+        self.effective_model_preset: str | None = None
 
     def allocate_task(
         self,
@@ -44,6 +45,7 @@ class AgentRuntime:
     ) -> TaskAllocation | None:
         if self.selector is None:
             return None
+        self.effective_model_preset = None
         allocation = CodingPlanTaskAllocator(
             self.selector.config,
             self.selector,
@@ -56,6 +58,7 @@ class AgentRuntime:
             max_cost_score=max_cost_score,
         )
         payload = allocation.to_dict()
+        self.effective_model_preset = allocation.effective_model_preset
         session.record("task_allocated", payload)
         self._record(session.session_id, "task_allocated", payload)
         if allocation.budget_exceeded:
@@ -129,6 +132,12 @@ class AgentRuntime:
                 routing_mode="fixed",
             )
         else:
+            original_model_preset = self.selector.model_preset
+            if (
+                original_model_preset == MODEL_PRESET_AUTO
+                and self.effective_model_preset is not None
+            ):
+                self.selector.model_preset = self.effective_model_preset
             try:
                 selection = self.selector.select(
                     role=role,
@@ -151,6 +160,8 @@ class AgentRuntime:
                 session.record("model_blocked", payload)
                 self._record(session.session_id, "model_blocked", payload)
                 raise
+            finally:
+                self.selector.model_preset = original_model_preset
         if selection.quota_status is not None and not selection.quota_status.available:
             payload = {
                 "role": role,

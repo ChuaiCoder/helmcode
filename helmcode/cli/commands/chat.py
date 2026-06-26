@@ -75,7 +75,7 @@ def chat_cmd(
     preset: str = typer.Option(
         "balanced",
         "--preset",
-        help="Coding Plan model preset: economy, balanced, or pro.",
+        help="Coding Plan model preset: auto, economy, balanced, or pro.",
     ),
     role_model: list[str] | None = typer.Option(
         None,
@@ -564,7 +564,7 @@ def _print_help(compact: bool) -> None:
         ("/clear", "Clear the screen and redraw the session status."),
         ("/mode recommend|plan|run", "Set what bare prompt text does."),
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
-        ("/preset economy|balanced|pro", "Set Coding Plan model preset."),
+        ("/preset auto|economy|balanced|pro", "Set Coding Plan model preset."),
         ("/pro [off|task]", "Use pro preset for the next task or this task."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
         ("/role-model <key=model|clear>", "Override one Coding Plan role or agent model."),

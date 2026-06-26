@@ -24,7 +24,7 @@ def cost_cmd(
     preset: str = typer.Option(
         "balanced",
         "--preset",
-        help="Coding Plan model preset: economy, balanced, or pro.",
+        help="Coding Plan model preset: auto, economy, balanced, or pro.",
     ),
     role_model: list[str] | None = typer.Option(
         None,
@@ -113,6 +113,7 @@ def _payload(
             "detected_task_type": allocation.detected_task_type,
             "complexity": allocation.complexity,
             "model_preset": allocation.model_preset,
+            "effective_model_preset": allocation.effective_model_preset,
             "estimated_calls": allocation.estimated_calls,
             "baseline_cost_score": allocation.baseline_cost_score,
             "selected_cost_score": allocation.selected_cost_score,
@@ -133,6 +134,8 @@ def _print_cost(payload: dict[str, object]) -> None:
     table.add_row("Task type", str(summary["detected_task_type"]))
     table.add_row("Complexity", str(summary["complexity"]))
     table.add_row("Model preset", str(summary["model_preset"]))
+    if summary["effective_model_preset"] != summary["model_preset"]:
+        table.add_row("Effective preset", str(summary["effective_model_preset"]))
     table.add_row("Context tokens", str(context["estimated_tokens"]))
     table.add_row("Explicit context tokens", str(context["explicit_context_tokens"]))
     table.add_row("Files considered", ", ".join(context["files_considered"]) or "none")

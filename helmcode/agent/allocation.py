@@ -15,6 +15,9 @@ from helmcode.core.constants import (
 )
 from helmcode.core.exceptions import ModelError
 from helmcode.models.quota import (
+    MODEL_PRESET_AUTO,
+    MODEL_PRESET_BALANCED,
+    MODEL_PRESET_PRO,
     TASK_CODE_PATCH,
     TASK_PLAN,
     TASK_REPAIR,
@@ -109,6 +112,7 @@ class TaskAllocation:
     complexity: str
     strategy: str
     model_preset: str
+    effective_model_preset: str
     assignments: list[AgentAssignment]
     warnings: list[str]
     estimated_calls: int
@@ -171,6 +175,7 @@ class TaskAllocation:
             "complexity": self.complexity,
             "strategy": self.strategy,
             "model_preset": self.model_preset,
+            "effective_model_preset": self.effective_model_preset,
             "assignments": [assignment.to_dict() for assignment in self.assignments],
             "warnings": self.warnings,
             "blocked": self.blocked,
@@ -280,6 +285,11 @@ class CodingPlanTaskAllocator:
     ) -> TaskAllocation:
         detected_task_type = classify_task(task)
         complexity = classify_complexity(task)
+        requested_model_preset = self.selector.model_preset
+        effective_model_preset = effective_model_preset_for_complexity(
+            requested_model_preset,
+            complexity,
+        )
         self.explicit_context_token_estimate = self._explicit_context_tokens(task)
         agent_ids = self._agent_ids_for_task(
             task=task,
@@ -293,87 +303,92 @@ class CodingPlanTaskAllocator:
         reservation_groups: list[list[ModelCallRecord]] = []
         warnings: list[str] = []
         coding_model: str | None = None
+        original_selector_preset = self.selector.model_preset
+        self.selector.model_preset = effective_model_preset
 
-        for agent in self._ordered_agents(agent_ids, detected_task_type=detected_task_type):
-            fallback_model_id = self._fallback_model(agent)
-            scoped_override_model_id = (
-                override_model_id or _model_override_for_agent(agent, model_overrides)
-            )
-            override_reason = (
-                "explicit --model override"
-                if override_model_id
-                else _model_override_reason(agent, model_overrides)
-            )
-            while True:
-                try:
-                    selection = self.selector.select(
-                        role=agent.role,
-                        task_type=agent.task_type,
-                        task=task,
-                        fallback_model_id=fallback_model_id,
-                        override_model_id=scoped_override_model_id,
-                        override_reason=override_reason,
-                        prefer_different_from=coding_model if agent.id == "reviewer" else None,
-                        reserved_records=_flatten_reservations(reservation_groups),
-                    )
-                except ModelError as exc:
-                    message = str(exc)
-                    if (
-                        agent.required
-                        and _looks_like_capacity_issue(message)
-                        and self._release_optional_reservation(
-                            assignments,
-                            reservation_groups,
-                            warnings,
-                            agent,
-                            message,
+        try:
+            for agent in self._ordered_agents(agent_ids, detected_task_type=detected_task_type):
+                fallback_model_id = self._fallback_model(agent)
+                scoped_override_model_id = (
+                    override_model_id or _model_override_for_agent(agent, model_overrides)
+                )
+                override_reason = (
+                    "explicit --model override"
+                    if override_model_id
+                    else _model_override_reason(agent, model_overrides)
+                )
+                while True:
+                    try:
+                        selection = self.selector.select(
+                            role=agent.role,
+                            task_type=agent.task_type,
+                            task=task,
+                            fallback_model_id=fallback_model_id,
+                            override_model_id=scoped_override_model_id,
+                            override_reason=override_reason,
+                            prefer_different_from=coding_model if agent.id == "reviewer" else None,
+                            reserved_records=_flatten_reservations(reservation_groups),
                         )
-                    ):
-                        continue
-                    if agent.required:
-                        warnings.append(f"blocked:{agent.id}:{exc}")
-                    else:
-                        warnings.append(f"skipped:{agent.id}:{exc}")
-                    break
-                if selection.quota_status is not None and not self._selection_has_capacity_for(agent, selection):
-                    message = self._quota_unavailable_message(agent, selection)
+                    except ModelError as exc:
+                        message = str(exc)
+                        if (
+                            agent.required
+                            and _looks_like_capacity_issue(message)
+                            and self._release_optional_reservation(
+                                assignments,
+                                reservation_groups,
+                                warnings,
+                                agent,
+                                message,
+                            )
+                        ):
+                            continue
+                        if agent.required:
+                            warnings.append(f"blocked:{agent.id}:{exc}")
+                        else:
+                            warnings.append(f"skipped:{agent.id}:{exc}")
+                        break
+                    if selection.quota_status is not None and not self._selection_has_capacity_for(agent, selection):
+                        message = self._quota_unavailable_message(agent, selection)
+                        if (
+                            agent.required
+                            and _looks_like_capacity_issue(message)
+                            and self._release_optional_reservation(
+                                assignments,
+                                reservation_groups,
+                                warnings,
+                                agent,
+                                message,
+                                selection=selection,
+                            )
+                        ):
+                            continue
+                        if agent.required:
+                            warnings.append(f"blocked:{agent.id}:{message}")
+                        else:
+                            warnings.append(f"skipped:{agent.id}:{message}")
+                        break
                     if (
-                        agent.required
-                        and _looks_like_capacity_issue(message)
-                        and self._release_optional_reservation(
-                            assignments,
-                            reservation_groups,
-                            warnings,
-                            agent,
-                            message,
-                            selection=selection,
-                        )
+                        scoped_override_model_id is None
+                        and not self._model_can_handle(selection.model_id, agent, fallback_model_id)
                     ):
-                        continue
-                    if agent.required:
-                        warnings.append(f"blocked:{agent.id}:{message}")
-                    else:
-                        warnings.append(f"skipped:{agent.id}:{message}")
+                        message = (
+                            f"{selection.model_id} is not profiled for {agent.task_type}; "
+                            f"refusing unsafe fallback for {agent.id}"
+                        )
+                        if agent.required:
+                            warnings.append(f"blocked:{agent.id}:{message}")
+                        else:
+                            warnings.append(f"skipped:{agent.id}:{message}")
+                        break
+                    if agent.id == "coder":
+                        coding_model = selection.model_id
+                    assignment = self._assignment(agent, selection)
+                    assignments.append(assignment)
+                    reservation_groups.append(self._reservations_for(agent, selection))
                     break
-                if (
-                    scoped_override_model_id is None
-                    and not self._model_can_handle(selection.model_id, agent, fallback_model_id)
-                ):
-                    message = (
-                        f"{selection.model_id} is not profiled for {agent.task_type}; "
-                        f"refusing unsafe fallback for {agent.id}"
-                    )
-                    if agent.required:
-                        warnings.append(f"blocked:{agent.id}:{message}")
-                    else:
-                        warnings.append(f"skipped:{agent.id}:{message}")
-                    break
-                if agent.id == "coder":
-                    coding_model = selection.model_id
-                assignment = self._assignment(agent, selection)
-                assignments.append(assignment)
-                reservation_groups.append(self._reservations_for(agent, selection))
-                break
+        finally:
+            self.selector.model_preset = original_selector_preset
 
         baseline_model_id = self._baseline_model()
         baseline_cost = self._baseline_cost(agent_ids, baseline_model_id)
@@ -384,7 +399,8 @@ class CodingPlanTaskAllocator:
             detected_task_type=detected_task_type,
             complexity=complexity,
             strategy=self._strategy(detected_task_type, complexity),
-            model_preset=self.selector.model_preset,
+            model_preset=requested_model_preset,
+            effective_model_preset=effective_model_preset,
             assignments=assignments,
             warnings=warnings,
             estimated_calls=len(assignments),
@@ -752,6 +768,14 @@ def classify_complexity(task: str) -> str:
     if score == 1:
         return COMPLEXITY_MEDIUM
     return COMPLEXITY_LOW
+
+
+def effective_model_preset_for_complexity(model_preset: str, complexity: str) -> str:
+    if model_preset != MODEL_PRESET_AUTO:
+        return model_preset
+    if complexity == COMPLEXITY_LOW:
+        return MODEL_PRESET_BALANCED
+    return MODEL_PRESET_PRO
 
 
 def _merge_agent_profiles(configured: list[AgentProfileConfig]) -> list[AgentProfile]:

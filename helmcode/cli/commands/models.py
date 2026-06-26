@@ -100,7 +100,7 @@ def recommend_models(
     preset: str = typer.Option(
         "balanced",
         "--preset",
-        help="Coding Plan model preset: economy, balanced, or pro.",
+        help="Coding Plan model preset: auto, economy, balanced, or pro.",
     ),
     role_model: list[str] | None = typer.Option(
         None,

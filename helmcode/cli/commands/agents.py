@@ -26,7 +26,7 @@ def plan_agents(
     preset: str = typer.Option(
         "balanced",
         "--preset",
-        help="Coding Plan model preset: economy, balanced, or pro.",
+        help="Coding Plan model preset: auto, economy, balanced, or pro.",
     ),
     role_model: list[str] | None = typer.Option(
         None,
@@ -129,6 +129,9 @@ def print_allocation(allocation: TaskAllocation) -> None:
     summary.add_row("Task type", allocation.detected_task_type)
     summary.add_row("Complexity", allocation.complexity)
     summary.add_row("Strategy", allocation.strategy)
+    summary.add_row("Model preset", allocation.model_preset)
+    if allocation.effective_model_preset != allocation.model_preset:
+        summary.add_row("Effective preset", allocation.effective_model_preset)
     summary.add_row("Estimated calls", str(allocation.estimated_calls))
     summary.add_row("Baseline model", allocation.baseline_model_id or "unknown")
     summary.add_row("Baseline calls", str(allocation.baseline_calls))
