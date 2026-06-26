@@ -33,3 +33,16 @@ quota_units:
     purpose: concurrent lane-style plans
   credit:
     purpose: generic credit-based plans
+agents:
+  scout:
+    purpose: cheap repository discovery before coding quota is spent
+  summarizer:
+    purpose: compress long context with a cheap model
+  planner:
+    purpose: plan implementation and verification
+  coder:
+    purpose: generate code patches
+  reviewer:
+    purpose: independently review generated patches
+  fixer:
+    purpose: repair failed verification attempts

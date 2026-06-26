@@ -67,6 +67,17 @@ class QuotaPolicyConfig(BaseModel):
         return self
 
 
+class AgentProfileConfig(BaseModel):
+    id: str
+    role: str
+    task_type: str
+    model_role: str
+    purpose: str
+    order: int = 100
+    required: bool = True
+    triggers: list[str] = Field(default_factory=list)
+
+
 class HelmcodeConfig(BaseModel):
     permission_mode: PermissionMode = DEFAULT_PERMISSION_MODE
     routing_mode: RoutingMode = "quota"
@@ -74,6 +85,7 @@ class HelmcodeConfig(BaseModel):
     model_roles: dict[str, str] = Field(default_factory=dict)
     model_profiles: list[ModelProfileConfig] = Field(default_factory=list)
     quota_policies: list[QuotaPolicyConfig] = Field(default_factory=list)
+    agent_profiles: list[AgentProfileConfig] = Field(default_factory=list)
     shell_timeout_seconds: int = 120
     max_read_chars: int = 20_000
 

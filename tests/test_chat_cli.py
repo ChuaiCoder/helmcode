@@ -74,6 +74,36 @@ def test_run_command_passes_session_flags(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_agents_command_builds_allocation(monkeypatch, tmp_path: Path) -> None:
+    state = chat.InteractiveState(workspace_path=tmp_path, routing_mode="fixed", forced_model="main:coder")
+    calls: list[dict[str, object]] = []
+
+    class FakeAllocation:
+        pass
+
+    def record_build(**kwargs):
+        calls.append(kwargs)
+        return FakeAllocation()
+
+    printed: list[object] = []
+
+    monkeypatch.setattr(chat.agents, "build_allocation", record_build)
+    monkeypatch.setattr(chat.agents, "print_allocation", printed.append)
+
+    assert chat.handle_interactive_line("/agents split this work", state) is True
+
+    assert calls == [
+        {
+            "task": "split this work",
+            "workspace": tmp_path,
+            "routing": "fixed",
+            "model": "main:coder",
+            "include_repair": False,
+        }
+    ]
+    assert isinstance(printed[0], FakeAllocation)
+
+
 def test_exit_command_stops_session(tmp_path: Path) -> None:
     state = chat.InteractiveState(workspace_path=tmp_path)
 

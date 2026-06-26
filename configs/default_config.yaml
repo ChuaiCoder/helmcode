@@ -15,3 +15,4 @@ shell_timeout_seconds: 120
 max_read_chars: 20000
 model_profiles: []
 quota_policies: []
+agent_profiles: []

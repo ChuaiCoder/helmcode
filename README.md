@@ -76,6 +76,8 @@ helmcode run "help me add tests for the auth module"
 helmcode plan "explain this repository architecture"
 helmcode models recommend "help me add tests for the auth module"
 helmcode models status
+helmcode agents plan "refactor the routing layer and add tests"
+helmcode agents plan --json "refactor the routing layer and add tests"
 helmcode diff
 helmcode apply
 helmcode doctor
@@ -97,6 +99,7 @@ commands to control the session:
 /mode recommend|plan|run      set what bare prompt text does
 /routing fixed|quota|recommend set model routing for the session
 /model <provider:model|clear> force or clear a model override
+/agents <task>                show quota-saving multi-agent assignment
 /models                       show configured roles and profiles
 /quota                        show local quota estimates
 /status                       show workspace and routing status
@@ -107,6 +110,31 @@ commands to control the session:
 ```
 
 `helmcode run` performs the main Agent workflow: generate a plan, ask whether to continue, generate a unified diff patch, show the diff, review the patch with the configured review model, ask whether to apply it, then run the detected test command unless `--no-tests` is passed. If tests fail, helmcode asks the coding model for a repair patch and retries verification up to three times. Use `--yes` for non-interactive approval of the plan and patch confirmations.
+
+`helmcode agents plan` is a local Coding Plan allocation planner. It does not
+call a provider. It splits a task across built-in agents such as `scout`,
+`planner`, `coder`, `reviewer`, and `fixer`, then chooses models through the
+quota-aware selector. This is useful for checking which work will use cheap
+models and which work will spend coding-model quota before running the task.
+Use `--json` when another tool or a future runtime loop needs to consume the
+allocation directly.
+
+Agent profiles can be extended in `~/.helmcode/config.yaml`. Triggered agents
+are included when their trigger text appears in the task. If a triggered agent
+has the same task type as an optional built-in agent, it replaces that optional
+agent instead of adding a duplicate model call:
+
+```yaml
+agent_profiles:
+  - id: security_reviewer
+    role: review
+    task_type: review
+    model_role: review
+    purpose: review security-sensitive code changes
+    order: 45
+    required: false
+    triggers: ["security", "auth"]
+```
 
 ## Permission Modes
 

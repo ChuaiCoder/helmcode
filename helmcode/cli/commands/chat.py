@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from helmcode.cli.commands import apply, config as config_command, diff, doctor, models, plan, run
+from helmcode.cli.commands import agents, apply, config as config_command, diff, doctor, models, plan, run
 from helmcode.context.workspace import Workspace
 from helmcode.core.config import load_config
 from helmcode.models.quota import QuotaAwareSelector, QuotaLedger
@@ -94,6 +94,12 @@ def handle_interactive_line(line: str, state: InteractiveState) -> bool:
     if command == "/quota":
         models.model_status(workspace=state.workspace_path)
         return True
+    if command == "/agents":
+        if rest:
+            _agents(rest, state)
+        else:
+            agents.list_agents()
+        return True
     if command == "/doctor":
         doctor.doctor(workspace=state.workspace_path)
         return True
@@ -161,6 +167,17 @@ def _recommend(task: str, state: InteractiveState) -> None:
     )
 
 
+def _agents(task: str, state: InteractiveState) -> None:
+    allocation = agents.build_allocation(
+        task=task,
+        workspace=state.workspace_path,
+        routing="quota" if state.routing_mode == "recommend" else state.routing_mode,
+        model=state.forced_model,
+        include_repair=False,
+    )
+    agents.print_allocation(allocation)
+
+
 def _plan(task: str, state: InteractiveState) -> None:
     routing = "quota" if state.routing_mode == "recommend" else state.routing_mode
     plan.plan_task(
@@ -224,6 +241,7 @@ def _print_help(compact: bool) -> None:
         ("/mode recommend|plan|run", "Set what bare prompt text does."),
         ("/routing fixed|quota|recommend", "Set model routing for this session."),
         ("/model <id|clear>", "Force a provider:model id or clear the override."),
+        ("/agents <task>", "Show quota-saving multi-agent assignment."),
         ("/models", "Show configured roles and model profiles."),
         ("/quota", "Show local quota estimates."),
         ("/status", "Show workspace, mode, routing, and quota."),
@@ -237,7 +255,7 @@ def _print_help(compact: bool) -> None:
     table = Table(title="Commands")
     table.add_column("Command")
     table.add_column("Description")
-    for command, description in commands if not compact else commands[:6]:
+    for command, description in commands if not compact else commands[:7]:
         table.add_row(command, description)
     console.print(table)
     if compact:

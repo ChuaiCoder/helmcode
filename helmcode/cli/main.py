@@ -6,7 +6,7 @@ import typer
 from rich.console import Console
 
 from helmcode import __version__
-from helmcode.cli.commands import apply, chat, config, diff, doctor, models, plan, run
+from helmcode.cli.commands import agents, apply, chat, config, diff, doctor, models, plan, run
 
 console = Console()
 app = typer.Typer(
@@ -16,6 +16,7 @@ app = typer.Typer(
 )
 
 app.add_typer(models.app, name="models")
+app.add_typer(agents.app, name="agents")
 
 
 @app.callback(invoke_without_command=True)

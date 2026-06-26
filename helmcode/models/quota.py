@@ -362,19 +362,6 @@ class QuotaAwareSelector:
 
 def classify_task(task: str) -> str:
     lowered = task.lower()
-    if any(token in lowered for token in ["review", "\u5ba1\u67e5", "\u8bc4\u5ba1", "\u68c0\u67e5 patch"]):
-        return TASK_REVIEW
-    if any(token in lowered for token in ["repair", "fix failing", "test failed", "\u4fee\u590d\u5931\u8d25"]):
-        return TASK_REPAIR
-    if any(
-        token in lowered
-        for token in ["plan", "\u8ba1\u5212", "\u65b9\u6848", "architecture", "\u67b6\u6784", "\u5206\u6790"]
-    ):
-        return TASK_PLAN
-    if any(token in lowered for token in ["summarize", "summary", "\u603b\u7ed3", "\u6982\u62ec"]):
-        return TASK_SUMMARIZE
-    if any(token in lowered for token in ["search", "find", "scan", "\u67e5\u627e", "\u626b\u63cf"]):
-        return TASK_REPO_SCAN
     if any(
         token in lowered
         for token in [
@@ -389,6 +376,19 @@ def classify_task(task: str) -> str:
         ]
     ):
         return TASK_CODE_PATCH
+    if any(token in lowered for token in ["review", "\u5ba1\u67e5", "\u8bc4\u5ba1", "\u68c0\u67e5 patch"]):
+        return TASK_REVIEW
+    if any(token in lowered for token in ["repair", "fix failing", "test failed", "\u4fee\u590d\u5931\u8d25"]):
+        return TASK_REPAIR
+    if any(
+        token in lowered
+        for token in ["plan", "\u8ba1\u5212", "\u65b9\u6848", "architecture", "\u67b6\u6784", "\u5206\u6790"]
+    ):
+        return TASK_PLAN
+    if any(token in lowered for token in ["summarize", "summary", "\u603b\u7ed3", "\u6982\u62ec"]):
+        return TASK_SUMMARIZE
+    if any(token in lowered for token in ["search", "find", "scan", "\u67e5\u627e", "\u626b\u63cf"]):
+        return TASK_REPO_SCAN
     return TASK_CLASSIFY
 
 
